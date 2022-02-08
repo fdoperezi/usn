@@ -8,19 +8,11 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LazyOption, LookupMap};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::sys;
-use near_sdk::sys::promise_batch_action_function_call;
-use near_sdk::Gas;
+use near_sdk::{
+    env, log, near_bindgen, sys, AccountId, Balance, Gas, PanicOnDefault, PromiseOrValue,
+};
 
-use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, PromiseOrValue};
 use std::convert::TryFrom;
-
-pub const OWNER_KEY: &[u8; 5] = b"OWNER";
-pub const VERSION_KEY: &[u8; 7] = b"VERSION";
-const SELF_MIGRATE_METHOD_NAME: &[u8; 7] = b"migrate";
-const ERR_MUST_BE_SELF: &str = "Can only be called by contract itself";
-const UPDATE_GAS_LEFTOVER: Gas = Gas(5_000_000_000_000);
-const NO_DEPOSIT: Balance = 0;
 
 #[derive(
     BorshDeserialize, BorshSerialize, Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize,
@@ -54,6 +46,7 @@ impl std::fmt::Display for ContractStatus {
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
+    owner_id: AccountId,
     token: FungibleToken,
     metadata: LazyOption<FungibleTokenMetadata>,
     black_list: LookupMap<AccountId, BlackListStatus>,
@@ -91,6 +84,7 @@ impl Contract {
         assert!(!env::state_exists(), "Already initialized");
         metadata.assert_valid();
         let mut this = Self {
+            owner_id: owner_id.clone(),
             token: FungibleToken::new(b"a".to_vec()),
             metadata: LazyOption::new(b"m".to_vec(), Some(&metadata)),
             black_list: LookupMap::new(b"b".to_vec()),
@@ -98,13 +92,11 @@ impl Contract {
         };
         this.token.internal_register_account(&owner_id);
         this.token.internal_deposit(&owner_id, total_supply.into());
-        Self::internal_set_owner(&owner_id);
-        Self::internal_set_version();
         this
     }
 
     pub fn upgrade_name_symbol(&mut self, name: String, symbol: String) {
-        self.abort_if_called_not_owner();
+        self.abort_if_not_owner();
         let metadata = self.metadata.take();
         if let Some(mut metadata) = metadata {
             metadata.name = name;
@@ -113,48 +105,17 @@ impl Contract {
         }
     }
 
-    // Storing owner in a separate storage to avoid STATE corruption issues.
-    // Returns previous owner if it existed.
-    pub(crate) fn internal_set_owner(owner_id: &AccountId) -> Option<AccountId> {
-        env::storage_write(OWNER_KEY, owner_id.as_bytes());
-        let wrote_account_id = env::storage_read(OWNER_KEY).map(|bytes| {
-            AccountId::new_unchecked(String::from_utf8(bytes).expect("INTERNAL FAIL"))
-        });
-        assert_eq!(&wrote_account_id, &Some(owner_id.clone()));
-        wrote_account_id
-    }
-
-    // Transfers ownership of the contract to a new account (`owner_id`).
-    // Can only be called by the current owner.
-    pub fn set_owner(&mut self, owner_id: &AccountId) {
-        self.abort_if_called_not_owner();
-        let prev_owner = Contract::internal_set_owner(owner_id)
-            .expect("Fatal error: The owner must exist before changing ownership");
-        assert_eq!(
-            prev_owner,
-            env::predecessor_account_id(),
-            "Fatal error: owner not set"
-        );
+    pub fn set_owner(&mut self, owner_id: AccountId) {
+        self.abort_if_not_owner();
+        self.owner_id = owner_id;
     }
 
     pub fn upgrade_icon(&mut self, data: String) {
-        self.abort_if_called_not_owner();
+        self.abort_if_not_owner();
         let metadata = self.metadata.take();
         if let Some(mut metadata) = metadata {
             metadata.icon = Some(data);
             self.metadata.replace(&metadata);
-        }
-    }
-
-    fn abort_if_pause(&self) {
-        if self.status == ContractStatus::Paused {
-            env::panic_str("Operation aborted because the contract under maintenance")
-        }
-    }
-
-    fn abort_if_called_not_owner(&self) {
-        if env::signer_account_id() != env::current_account_id() {
-            env::panic_str("This method might be called only by owner account")
         }
     }
 
@@ -167,21 +128,21 @@ impl Contract {
     }
 
     pub fn add_to_blacklist(&mut self, account_id: &AccountId) {
+        self.abort_if_not_owner();
         self.abort_if_pause();
-        self.abort_if_called_not_owner();
         self.black_list.insert(account_id, &BlackListStatus::Banned);
     }
 
     pub fn remove_from_blacklist(&mut self, account_id: &AccountId) {
+        self.abort_if_not_owner();
         self.abort_if_pause();
-        self.abort_if_called_not_owner();
         self.black_list
             .insert(account_id, &BlackListStatus::Allowable);
     }
 
     pub fn destroy_black_funds(&mut self, account_id: &AccountId) {
+        self.abort_if_not_owner();
         self.abort_if_pause();
-        self.abort_if_called_not_owner();
         assert_eq!(
             self.get_blacklist_status(&account_id),
             BlackListStatus::Banned
@@ -207,8 +168,8 @@ impl Contract {
     // Creates `amount` tokens and assigns them to `account`, increasing
     // the total supply.
     pub fn mint(&mut self, account_id: &AccountId, amount: U128) -> Balance {
+        self.abort_if_not_owner();
         self.abort_if_pause();
-        self.abort_if_called_not_owner();
         // Add amount to total_supply
         self.token.total_supply = self
             .token
@@ -245,8 +206,8 @@ impl Contract {
     // if the balance must be enough to cover the redeem
     // or the call will fail.
     pub fn burn(&mut self, account_id: &AccountId, amount: U128) {
+        self.abort_if_not_owner();
         self.abort_if_pause();
-        self.abort_if_called_not_owner();
         assert!(&self.token.total_supply >= &Balance::from(amount));
         assert!(u128::from(self.ft_balance_of(account_id.clone())) >= u128::from(amount));
 
@@ -268,18 +229,18 @@ impl Contract {
 
     // If we have to pause contract
     pub fn pause(&mut self) {
-        self.abort_if_called_not_owner();
+        self.abort_if_not_owner();
         self.status = ContractStatus::Paused;
     }
 
     // If we have to resume contract
     pub fn resume(&mut self) {
-        self.abort_if_called_not_owner();
+        self.abort_if_not_owner();
         self.status = ContractStatus::Working;
     }
 
     pub fn contract_status(&self) -> ContractStatus {
-        self.abort_if_called_not_owner();
+        self.abort_if_not_owner();
         self.status
     }
 
@@ -310,17 +271,33 @@ impl Contract {
         metadata.expect("Unable to get decimals").decimals
     }
 
-    pub(crate) fn internal_set_version() {
-        env::storage_write(VERSION_KEY, Self::get_version().as_bytes());
-    }
-
-    pub(crate) fn internal_get_state_version() -> String {
-        String::from_utf8(env::storage_read(VERSION_KEY).expect("MUST HAVE VERSION"))
-            .expect("INTERNAL_FAIL")
-    }
-
-    pub fn get_version() -> String {
+    pub fn get_version(&self) -> String {
         format!("{}:{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    }
+
+    /// Should only be called by this contract on migration.
+    /// This is NOOP implementation. KEEP IT if you haven't changed contract state.
+    /// This method is called from `update()` method.
+    /// For next version upgrades, change this function.
+    #[init(ignore_state)]
+    #[private]
+    pub fn migrate() -> Self {
+        let this: Contract = env::state_read().expect("Contract is not initialized.");
+        this
+    }
+
+    fn abort_if_pause(&self) {
+        if self.status == ContractStatus::Paused {
+            env::panic_str("Operation aborted because the contract under maintenance")
+        }
+    }
+
+    fn abort_if_not_owner(&self) {
+        if env::signer_account_id() != env::current_account_id()
+            && env::signer_account_id() != self.owner_id
+        {
+            env::panic_str("This method might be called only by owner account")
+        }
     }
 
     fn on_account_closed(&mut self, account_id: AccountId, balance: Balance) {
@@ -332,65 +309,39 @@ impl Contract {
     }
 }
 
-/// Updating current contract with the received code from factory.
 #[no_mangle]
-pub extern "C" fn update() {
+pub fn update() {
     env::setup_panic_hook();
-    let current_id = env::current_account_id();
-    assert_eq!(
-        env::predecessor_account_id(),
-        current_id,
-        "{}",
-        ERR_MUST_BE_SELF
-    );
+
+    let contract: Contract = env::state_read().expect("Contract is not initialized");
+    contract.abort_if_not_owner();
+
+    const MIGRATE_METHOD_NAME: &[u8; 7] = b"migrate";
+    const UPDATE_GAS_LEFTOVER: Gas = Gas(5_000_000_000_000);
+
     unsafe {
-        // Load code into register 0 result from the promise.
-        match sys::promise_result(0, 0) {
-            1 => {}
-            // Not ready or failed.
-            _ => env::panic_str("Failed to fetch the new code"),
-        };
-        // Update current contract with code from register 0.
+        // Load code into register 0 result from the input argument if factory call or from promise if callback.
+        sys::input(0);
+        // Create a promise batch to update current contract with code from register 0.
         let promise_id = sys::promise_batch_create(
-            current_id.as_bytes().len() as _,
-            current_id.as_bytes().as_ptr() as _,
+            env::current_account_id().as_bytes().len() as u64,
+            env::current_account_id().as_bytes().as_ptr() as u64,
         );
-        // Deploy the contract code.
-        sys::promise_batch_action_deploy_contract(promise_id, u64::MAX as _, 0);
+        // Deploy the contract code from register 0.
+        sys::promise_batch_action_deploy_contract(promise_id, u64::MAX, 0);
         // Call promise to migrate the state.
         // Batched together to fail upgrade if migration fails.
-        promise_batch_action_function_call(
+        sys::promise_batch_action_function_call(
             promise_id,
-            SELF_MIGRATE_METHOD_NAME.len() as _,
-            SELF_MIGRATE_METHOD_NAME.as_ptr() as _,
+            MIGRATE_METHOD_NAME.len() as u64,
+            MIGRATE_METHOD_NAME.as_ptr() as u64,
             0,
             0,
-            &NO_DEPOSIT as *const u128 as _,
+            0,
             (env::prepaid_gas() - env::used_gas() - UPDATE_GAS_LEFTOVER).0,
         );
         sys::promise_return(promise_id);
     }
-}
-
-/// Empty migrate method for future use.
-/// Makes sure that state version is previous.
-/// When updating code, make sure to update what previous version actually is.
-#[no_mangle]
-pub extern "C" fn migrate() {
-    env::setup_panic_hook();
-    assert_eq!(
-        env::predecessor_account_id(),
-        env::current_account_id(),
-        "{}",
-        ERR_MUST_BE_SELF
-    );
-    // Check that state version is previous.
-    // Will fail migration in the case of trying to skip the versions.
-    assert_eq!(
-        Contract::internal_get_state_version(),
-        // TODO: change this when writing migration.
-        Contract::get_version()
-    );
 }
 
 /// The core methods for a basic fungible token. Extension standards may be
