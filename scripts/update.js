@@ -7,8 +7,8 @@ const assert = require('assert').strict;
 const config = {
   networkId: 'sandbox',
   nodeUrl: 'http://0.0.0.0:3030',
-  keyPath: '/tmp/near-sandbox/validator_key.json',
-  contractPath: './target/wasm32-unknown-unknown/release/usdt_gold.wasm',
+  keyPath: '/tmp/near-usdn-sandbox/validator_key.json',
+  contractPath: './target/wasm32-unknown-unknown/release/usdn.wasm',
   accountId: 'test.near',
   contractId: 'test.near',
 };

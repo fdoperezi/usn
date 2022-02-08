@@ -1,12 +1,17 @@
 {
-  "name": "usdt-gold",
+  "name": "usdn",
   "scripts": {
+    "prebuild": "rustup target add wasm32-unknown-unknown",
+    "build": "cargo build --target wasm32-unknown-unknown --release",
     "deploy": "./scripts/deploy.sh",
     "demo": "./scripts/demo.sh",
-    "update": "node scripts/update.js"
+    "update": "node scripts/update.js",
+    "presandbox": "rm -rf /tmp/near-usdn-sandbox && near-sandbox --home /tmp/near-usdn-sandbox init",
+    "sandbox": "near-sandbox --home /tmp/near-usdn-sandbox run"
   },
   "devDependencies": {
     "bn": "^1.0.5",
-    "near-api-js": "^0.44.2"
+    "near-api-js": "^0.44.2",
+    "near-sandbox": "^0.0.8"
   }
 }
