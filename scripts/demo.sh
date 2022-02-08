@@ -7,21 +7,16 @@ SANDBOX=" --networkId sandbox --nodeUrl http://0.0.0.0:3030 --keyPath /tmp/near-
 # Amount of tokens that have to be issued (total supply: 1000 tokens)
 TOTAL_SUPPLY=1000000000000000000000000000
 
-near deploy --wasm-file target/wasm32-unknown-unknown/release/usdn.wasm \
+near deploy --wasm-file target/wasm32-unknown-unknown/release/usdt_gold.wasm \
             --initFunction new_default_meta \
             --initArgs "{\"owner_id\": \"${ID}\", \"total_supply\": \"${TOTAL_SUPPLY}\"}" \
             --account-id $ID \
             --master-account $ID \
             $SANDBOX
 
-echo -e "${RED}"
-read -p "Do you wish to create Bob sub account? (y/n) " -n 1
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${NC}"
-    near create-account bob.$ID --masterAccount $ID --initialBalance 1 $SANDBOX
-    near call $ID storage_deposit '' --accountId bob.$ID --amount 0.00125 $SANDBOX
-fi
+echo -e "${NC}"
+near create-account bob.$ID --masterAccount $ID --initialBalance 1 $SANDBOX
+near call $ID storage_deposit '' --accountId bob.$ID --amount 0.00125 $SANDBOX
 
 echo -e "\n${RED}TOTAL SUPPLY:${NC}"
 near view $ID ft_total_supply --args '{}' $SANDBOX

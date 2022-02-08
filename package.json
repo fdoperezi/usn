@@ -1,0 +1,12 @@
+{
+  "name": "usdt-gold",
+  "scripts": {
+    "deploy": "./scripts/deploy.sh",
+    "demo": "./scripts/demo.sh",
+    "update": "node scripts/update.js"
+  },
+  "devDependencies": {
+    "bn": "^1.0.5",
+    "near-api-js": "^0.44.2"
+  }
+}
