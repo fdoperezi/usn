@@ -10,11 +10,12 @@ near deploy --wasm-file target/wasm32-unknown-unknown/release/usdn.wasm \
             --master-account $ID \
             --networkId sandbox \
             --nodeUrl http://0.0.0.0:3030 \
-            --keyPath /tmp/near-usdn-sandbox/validator_key.json
+            --keyPath /tmp/near-usdn-sandbox/validator_key.json \
+            --force
 
-near call $ID new_default_meta \
+near call $ID new \
             --account-id $ID \
-            --args '{"owner_id": "'$ID'", "total_supply": "'$TOTAL_SUPPLY'"}' \
+            --args '{"total_supply": "'$TOTAL_SUPPLY'"}' \
             --networkId sandbox \
             --nodeUrl http://0.0.0.0:3030 \
             --keyPath /tmp/near-usdn-sandbox/validator_key.json
