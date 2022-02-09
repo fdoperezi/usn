@@ -9,10 +9,18 @@ use near_sdk::collections::{LazyOption, LookupMap};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    env, log, near_bindgen, sys, AccountId, Balance, Gas, PanicOnDefault, PromiseOrValue,
+    env, log, near_bindgen, sys, AccountId, Balance, Gas, PanicOnDefault, Promise, PromiseOrValue,
 };
 
 use std::convert::TryFrom;
+
+const TOKEN_DECIMAL: u8 = 6;
+
+const TOKEN_ONE: u128 = 1_000_000;
+const NEAR_ONE: u128 = 1_000_000_000_000_000_000_000_000;
+
+const DEFAULT_EXCHANGE_RATE: u128 = 12_000_000; // 1 N = 12 USDN
+const DEFAULT_SPREAD: u128 = 10_000; // 0.01 (10000 / 1000000)
 
 #[derive(
     BorshDeserialize, BorshSerialize, Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize,
@@ -51,6 +59,8 @@ pub struct Contract {
     metadata: LazyOption<FungibleTokenMetadata>,
     black_list: LookupMap<AccountId, BlackListStatus>,
     status: ContractStatus,
+    exchange_rate: u128,
+    spread: u128,
 }
 
 const DATA_IMAGE_SVG_NEAR_ICON: &str =
@@ -71,7 +81,7 @@ impl Contract {
             icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
             reference: None,
             reference_hash: None,
-            decimals: 6,
+            decimals: TOKEN_DECIMAL,
         };
 
         let mut this = Self {
@@ -80,6 +90,8 @@ impl Contract {
             metadata: LazyOption::new(b"m".to_vec(), Some(&metadata)),
             black_list: LookupMap::new(b"b".to_vec()),
             status: ContractStatus::Working,
+            exchange_rate: DEFAULT_EXCHANGE_RATE,
+            spread: DEFAULT_SPREAD,
         };
 
         this.token.internal_register_account(&owner_id);
@@ -179,6 +191,33 @@ impl Contract {
     pub fn resume(&mut self) {
         self.abort_if_not_owner();
         self.status = ContractStatus::Working;
+    }
+
+    // Buys tokens for Near coins.
+    // Returns amount of purchased tokens.
+    // TODO: Rework and secure this PoC.
+    #[payable]
+    pub fn buy(&mut self) -> Balance {
+        let buyer = env::predecessor_account_id();
+        let spread = TOKEN_ONE - self.spread; // 1 - 0.01
+        let amount = env::attached_deposit() * spread * self.exchange_rate / (NEAR_ONE * TOKEN_ONE);
+        self.token
+            .internal_transfer(&self.owner_id, &buyer, amount, Some("Purchased".to_owned()));
+        amount
+    }
+
+    // Sells tokens getting Near coins.
+    // Return amount of purchased Near coins.
+    // TODO: Rework and secure this PoC.
+    pub fn sell(&mut self, amount: U128) -> Balance {
+        let amount = u128::from(amount);
+        let seller = env::predecessor_account_id();
+        let spread = TOKEN_ONE + self.spread; // 1 + 0.01
+        let deposit = (amount * spread * NEAR_ONE) / (self.exchange_rate * TOKEN_ONE);
+        self.token
+            .internal_transfer(&seller, &self.owner_id, amount, Some("Sold".to_owned()));
+        Promise::new(seller).transfer(deposit);
+        deposit
     }
 
     pub fn contract_status(&self) -> ContractStatus {
