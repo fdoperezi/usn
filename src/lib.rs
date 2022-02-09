@@ -61,28 +61,19 @@ impl Contract {
     // Initializes the contract with the given total supply owned by the given `owner_id` with
     // default metadata (for example purposes only).
     #[init]
-    pub fn new_default_meta(owner_id: AccountId, total_supply: U128) -> Self {
-        Self::new(
-            owner_id,
-            total_supply,
-            FungibleTokenMetadata {
-                spec: FT_METADATA_SPEC.to_string(),
-                name: "USD Near".to_string(),
-                symbol: "USDN".to_string(),
-                icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
-                reference: None,
-                reference_hash: None,
-                decimals: 8,
-            },
-        )
-    }
+    pub fn new(total_supply: U128) -> Self {
+        let owner_id = env::signer_account_id();
 
-    // Initializes the contract with the given total supply owned by the given `owner_id` with
-    // the given fungible token metadata.
-    #[init]
-    pub fn new(owner_id: AccountId, total_supply: U128, metadata: FungibleTokenMetadata) -> Self {
-        assert!(!env::state_exists(), "Already initialized");
-        metadata.assert_valid();
+        let metadata = FungibleTokenMetadata {
+            spec: FT_METADATA_SPEC.to_string(),
+            name: "USD Near".to_string(),
+            symbol: "USDN".to_string(),
+            icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
+            reference: None,
+            reference_hash: None,
+            decimals: 6,
+        };
+
         let mut this = Self {
             owner_id: owner_id.clone(),
             token: FungibleToken::new(b"a".to_vec()),
@@ -90,6 +81,7 @@ impl Contract {
             black_list: LookupMap::new(b"b".to_vec()),
             status: ContractStatus::Working,
         };
+
         this.token.internal_register_account(&owner_id);
         this.token.internal_deposit(&owner_id, total_supply.into());
         this
@@ -161,36 +153,10 @@ impl Contract {
 
     // Issue a new amount of tokens
     // these tokens are deposited into the owner address
-    pub fn issue(&mut self, amount: U128) -> Balance {
-        self.mint(&env::current_account_id(), amount)
-    }
-
-    // Creates `amount` tokens and assigns them to `account`, increasing
-    // the total supply.
-    pub fn mint(&mut self, account_id: &AccountId, amount: U128) -> Balance {
+    pub fn issue(&mut self, amount: U128) {
         self.abort_if_not_owner();
         self.abort_if_pause();
-        // Add amount to total_supply
-        self.token.total_supply = self
-            .token
-            .total_supply
-            .checked_add(u128::from(amount))
-            .expect("Issue caused supply overflow");
-        // Add amount to owner balance
-        if let Some(owner_amount) = self.token.accounts.get(account_id) {
-            self.token.accounts.insert(
-                account_id,
-                &(owner_amount
-                    .checked_add(u128::from(amount))
-                    .expect("Owner has exceeded balance") as Balance),
-            );
-        } else {
-            self.token
-                .accounts
-                .insert(account_id, &Balance::from(amount));
-        }
-        // Return upgraded total_supply
-        self.token.total_supply
+        self.token.internal_deposit(&self.owner_id, amount.into());
     }
 
     // Redeem tokens (burn).
@@ -198,33 +164,9 @@ impl Contract {
     // if the balance must be enough to cover the redeem
     // or the call will fail.
     pub fn redeem(&mut self, amount: U128) {
-        self.burn(&env::current_account_id(), amount)
-    }
-
-    // Redeem tokens (burn).
-    // These tokens are withdrawn from the owner address
-    // if the balance must be enough to cover the redeem
-    // or the call will fail.
-    pub fn burn(&mut self, account_id: &AccountId, amount: U128) {
         self.abort_if_not_owner();
         self.abort_if_pause();
-        assert!(&self.token.total_supply >= &Balance::from(amount));
-        assert!(u128::from(self.ft_balance_of(account_id.clone())) >= u128::from(amount));
-
-        self.token.total_supply = self
-            .token
-            .total_supply
-            .checked_sub(u128::from(amount))
-            .expect("Redeem caused supply underflow");
-
-        if let Some(owner_amount) = self.token.accounts.get(&account_id.clone().into()) {
-            self.token.accounts.insert(
-                account_id,
-                &(owner_amount
-                    .checked_sub(u128::from(amount))
-                    .expect("The owner has subceed balance") as Balance),
-            );
-        }
+        self.token.internal_withdraw(&self.owner_id, amount.into());
     }
 
     // If we have to pause contract
@@ -247,27 +189,27 @@ impl Contract {
     /**
      * @dev Returns the name of the token.
      */
-    pub fn name(&mut self) -> String {
+    pub fn name(&self) -> String {
         self.abort_if_pause();
-        let metadata = self.metadata.take();
+        let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").name
     }
 
     /**
      * Returns the symbol of the token.
      */
-    pub fn symbol(&mut self) -> String {
+    pub fn symbol(&self) -> String {
         self.abort_if_pause();
-        let metadata = self.metadata.take();
+        let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").symbol
     }
 
     /**
      * Returns the decimals places of the token.
      */
-    pub fn decimals(&mut self) -> u8 {
+    pub fn decimals(&self) -> u8 {
         self.abort_if_pause();
-        let metadata = self.metadata.take();
+        let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").decimals
     }
 
@@ -293,9 +235,7 @@ impl Contract {
     }
 
     fn abort_if_not_owner(&self) {
-        if env::signer_account_id() != env::current_account_id()
-            && env::signer_account_id() != self.owner_id
-        {
+        if env::signer_account_id() != self.owner_id {
             env::panic_str("This method might be called only by owner account")
         }
     }
@@ -453,7 +393,7 @@ mod tests {
     fn test_new() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let contract = Contract::new_default_meta(accounts(1).into(), TOTAL_SUPPLY.into());
+        let contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.ft_total_supply().0, TOTAL_SUPPLY);
         assert_eq!(contract.ft_balance_of(accounts(1)).0, TOTAL_SUPPLY);
@@ -471,7 +411,7 @@ mod tests {
     fn test_transfer() {
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
-        let mut contract = Contract::new_default_meta(accounts(2).into(), TOTAL_SUPPLY.into());
+        let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(contract.storage_balance_bounds().min.into())
@@ -503,9 +443,9 @@ mod tests {
 
     #[test]
     fn test_blacklist() {
-        let mut context = get_context(accounts(2));
+        let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new_default_meta(accounts(2).into(), TOTAL_SUPPLY.into());
+        let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(contract.storage_balance_bounds().min.into())
@@ -545,7 +485,7 @@ mod tests {
     fn test_destroy_black_funds_panic() {
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
-        let mut contract = Contract::new_default_meta(accounts(2).into(), TOTAL_SUPPLY.into());
+        let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(contract.storage_balance_bounds().min.into())
@@ -565,9 +505,9 @@ mod tests {
 
     #[test]
     fn test_issuance() {
-        let mut context = get_context(accounts(2));
+        let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new_default_meta(accounts(2).into(), TOTAL_SUPPLY.into());
+        let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(contract.storage_balance_bounds().min.into())
@@ -592,9 +532,9 @@ mod tests {
 
     #[test]
     fn test_redeem() {
-        let mut context = get_context(accounts(2));
+        let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new_default_meta(accounts(2).into(), TOTAL_SUPPLY.into());
+        let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(contract.storage_balance_bounds().min.into())
@@ -614,9 +554,9 @@ mod tests {
 
     #[test]
     fn test_maintenance() {
-        let mut context = get_context(accounts(2));
+        let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new_default_meta(accounts(2).into(), TOTAL_SUPPLY.into());
+        let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(contract.storage_balance_bounds().min.into())
