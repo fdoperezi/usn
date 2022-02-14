@@ -14,9 +14,9 @@ USN token provides in-built _currency exchange_ API: `buy` and `sell`.
 
 ```rust
 #[payable]
-pub fn buy(&mut self) -> Balance
+pub fn buy(&mut self) -> Balance;
 
-pub fn sell(&mut self, amount: U128) -> Balance
+pub fn sell(&mut self, amount: U128) -> Balance;
 ```
 Example of usage with NEAR CLI:
 
