@@ -1,3 +1,5 @@
+mod owner;
+
 use near_contract_standards::fungible_token::core::FungibleTokenCore;
 use near_contract_standards::fungible_token::metadata::{
     FungibleTokenMetadata, FungibleTokenMetadataProvider, FT_METADATA_SPEC,
@@ -5,11 +7,12 @@ use near_contract_standards::fungible_token::metadata::{
 use near_contract_standards::fungible_token::resolver::FungibleTokenResolver;
 use near_contract_standards::fungible_token::FungibleToken;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::{LazyOption, LookupMap};
+use near_sdk::collections::{LazyOption, LookupMap, UnorderedSet};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    env, log, near_bindgen, sys, AccountId, Balance, Gas, PanicOnDefault, Promise, PromiseOrValue,
+    assert_one_yocto, env, log, near_bindgen, sys, AccountId, Balance, BorshStorageKey, Gas,
+    PanicOnDefault, Promise, PromiseOrValue,
 };
 
 use std::convert::TryFrom;
@@ -22,9 +25,15 @@ const NEAR_ONE: u128 = 1_000_000_000_000_000_000_000_000;
 const DEFAULT_EXCHANGE_RATE: u128 = 12_000_000; // 1 N = 12 USN
 const DEFAULT_SPREAD: u128 = 10_000; // 0.01 (10000 / 1000000)
 
-#[derive(
-    BorshDeserialize, BorshSerialize, Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize,
-)]
+#[derive(BorshStorageKey, BorshSerialize)]
+pub(crate) enum StorageKey {
+    Guardians,
+    Token,
+    TokenMetadata,
+    Blacklist,
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub enum BlackListStatus {
     // An address might be using
@@ -33,9 +42,7 @@ pub enum BlackListStatus {
     Banned,
 }
 
-#[derive(
-    BorshDeserialize, BorshSerialize, Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize,
-)]
+#[derive(BorshDeserialize, BorshSerialize, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub enum ContractStatus {
     Working,
@@ -55,6 +62,7 @@ impl std::fmt::Display for ContractStatus {
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
     owner_id: AccountId,
+    guardians: UnorderedSet<AccountId>,
     token: FungibleToken,
     metadata: LazyOption<FungibleTokenMetadata>,
     black_list: LookupMap<AccountId, BlackListStatus>,
@@ -86,9 +94,10 @@ impl Contract {
 
         let mut this = Self {
             owner_id: owner_id.clone(),
-            token: FungibleToken::new(b"a".to_vec()),
-            metadata: LazyOption::new(b"m".to_vec(), Some(&metadata)),
-            black_list: LookupMap::new(b"b".to_vec()),
+            guardians: UnorderedSet::new(StorageKey::Guardians),
+            token: FungibleToken::new(StorageKey::Token),
+            metadata: LazyOption::new(StorageKey::TokenMetadata, Some(&metadata)),
+            black_list: LookupMap::new(StorageKey::Blacklist),
             status: ContractStatus::Working,
             exchange_rate: DEFAULT_EXCHANGE_RATE,
             spread: DEFAULT_SPREAD,
@@ -100,7 +109,7 @@ impl Contract {
     }
 
     pub fn upgrade_name_symbol(&mut self, name: String, symbol: String) {
-        self.abort_if_not_owner();
+        self.assert_owner();
         let metadata = self.metadata.take();
         if let Some(mut metadata) = metadata {
             metadata.name = name;
@@ -109,13 +118,8 @@ impl Contract {
         }
     }
 
-    pub fn set_owner(&mut self, owner_id: AccountId) {
-        self.abort_if_not_owner();
-        self.owner_id = owner_id;
-    }
-
     pub fn upgrade_icon(&mut self, data: String) {
-        self.abort_if_not_owner();
+        self.assert_owner();
         let metadata = self.metadata.take();
         if let Some(mut metadata) = metadata {
             metadata.icon = Some(data);
@@ -132,20 +136,20 @@ impl Contract {
     }
 
     pub fn add_to_blacklist(&mut self, account_id: &AccountId) {
-        self.abort_if_not_owner();
+        self.assert_owner();
         self.abort_if_pause();
         self.black_list.insert(account_id, &BlackListStatus::Banned);
     }
 
     pub fn remove_from_blacklist(&mut self, account_id: &AccountId) {
-        self.abort_if_not_owner();
+        self.assert_owner();
         self.abort_if_pause();
         self.black_list
             .insert(account_id, &BlackListStatus::Allowable);
     }
 
     pub fn destroy_black_funds(&mut self, account_id: &AccountId) {
-        self.abort_if_not_owner();
+        self.assert_owner();
         self.abort_if_pause();
         assert_eq!(
             self.get_blacklist_status(&account_id),
@@ -166,7 +170,7 @@ impl Contract {
     // Issue a new amount of tokens
     // these tokens are deposited into the owner address
     pub fn issue(&mut self, amount: U128) {
-        self.abort_if_not_owner();
+        self.assert_owner();
         self.abort_if_pause();
         self.token.internal_deposit(&self.owner_id, amount.into());
     }
@@ -176,28 +180,31 @@ impl Contract {
     // if the balance must be enough to cover the redeem
     // or the call will fail.
     pub fn redeem(&mut self, amount: U128) {
-        self.abort_if_not_owner();
+        self.assert_owner();
         self.abort_if_pause();
         self.token.internal_withdraw(&self.owner_id, amount.into());
     }
 
-    // If we have to pause contract
+    // Pauses the contract. Only can be called by owner or guardians.
+    #[payable]
     pub fn pause(&mut self) {
-        self.abort_if_not_owner();
+        assert_one_yocto();
+        self.assert_owner_or_guardian();
         self.status = ContractStatus::Paused;
     }
 
-    // If we have to resume contract
+    // Resumes the contract. Only can be called by owner.
     pub fn resume(&mut self) {
-        self.abort_if_not_owner();
+        self.assert_owner();
         self.status = ContractStatus::Working;
     }
 
-    // Buys tokens for Near coins.
+    // Buys tokens for NEAR coins.
     // Returns amount of purchased tokens.
-    // TODO: Rework and secure this PoC.
+    // TODO: Rework this PoC.
     #[payable]
     pub fn buy(&mut self) -> Balance {
+        self.assert_owner_or_guardian();
         let buyer = env::predecessor_account_id();
         let spread = TOKEN_ONE - self.spread; // 1 - 0.01
         let amount = env::attached_deposit() * spread * self.exchange_rate / (NEAR_ONE * TOKEN_ONE);
@@ -206,10 +213,11 @@ impl Contract {
         amount
     }
 
-    // Sells tokens getting Near coins.
+    // Sells tokens getting NEAR coins.
     // Return amount of purchased Near coins.
-    // TODO: Rework and secure this PoC.
+    // TODO: Rework this PoC.
     pub fn sell(&mut self, amount: U128) -> Balance {
+        self.assert_owner_or_guardian();
         let amount = u128::from(amount);
         let seller = env::predecessor_account_id();
         let spread = TOKEN_ONE + self.spread; // 1 + 0.01
@@ -221,8 +229,8 @@ impl Contract {
     }
 
     pub fn contract_status(&self) -> ContractStatus {
-        self.abort_if_not_owner();
-        self.status
+        self.assert_owner();
+        self.status.clone()
     }
 
     /**
@@ -273,12 +281,6 @@ impl Contract {
         }
     }
 
-    fn abort_if_not_owner(&self) {
-        if env::signer_account_id() != self.owner_id {
-            env::panic_str("This method might be called only by owner account")
-        }
-    }
-
     fn on_account_closed(&mut self, account_id: AccountId, balance: Balance) {
         log!("Closed @{} with {}", account_id, balance);
     }
@@ -293,7 +295,7 @@ pub fn update() {
     env::setup_panic_hook();
 
     let contract: Contract = env::state_read().expect("Contract is not initialized");
-    contract.abort_if_not_owner();
+    contract.assert_owner();
 
     const MIGRATE_METHOD_NAME: &[u8; 7] = b"migrate";
     const UPDATE_GAS_LEFTOVER: Gas = Gas(5_000_000_000_000);
@@ -487,7 +489,6 @@ mod tests {
         let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(contract.storage_balance_bounds().min.into())
             .predecessor_account_id(accounts(1))
             .current_account_id(accounts(1))
             .signer_account_id(accounts(1))
@@ -527,7 +528,6 @@ mod tests {
         let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(contract.storage_balance_bounds().min.into())
             .predecessor_account_id(accounts(1))
             .current_account_id(accounts(1))
             .signer_account_id(accounts(1))
@@ -549,7 +549,6 @@ mod tests {
         let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(contract.storage_balance_bounds().min.into())
             .predecessor_account_id(accounts(1))
             .current_account_id(accounts(1))
             .signer_account_id(accounts(1))
@@ -576,7 +575,6 @@ mod tests {
         let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(contract.storage_balance_bounds().min.into())
             .predecessor_account_id(accounts(1))
             .current_account_id(accounts(1))
             .signer_account_id(accounts(1))
@@ -598,7 +596,7 @@ mod tests {
         let mut contract = Contract::new(TOTAL_SUPPLY.into());
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .attached_deposit(1)
             .predecessor_account_id(accounts(1))
             .current_account_id(accounts(1))
             .signer_account_id(accounts(1))
