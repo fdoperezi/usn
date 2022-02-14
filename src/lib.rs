@@ -614,4 +614,60 @@ mod tests {
         });
         assert!(result.is_err());
     }
+
+    #[test]
+    #[should_panic]
+    fn test_extend_guardians_by_user() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
+        contract.extend_guardians(vec![accounts(3)]);
+    }
+
+    #[test]
+    fn test_guardians() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context.predecessor_account_id(accounts(1)).build());
+        contract.extend_guardians(vec![accounts(2)]);
+        assert!(contract.guardians.contains(&accounts(2)));
+        contract.remove_guardians(vec![accounts(2)]);
+        assert!(!contract.guardians.contains(&accounts(2)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_cannot_buy_sell() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
+        contract.buy();
+    }
+
+    #[test]
+    fn test_buy_sell() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new();
+        contract.extend_guardians(vec![accounts(2)]);
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .build());
+        contract.storage_deposit(None, None);
+
+        const ONE_NEAR: Balance = 1_000_000_000_000_000_000_000_000;
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(ONE_NEAR)
+            .build());
+        assert_eq!(contract.buy(), 11880000);
+        assert!(contract.sell(U128::from(1188000)) < ONE_NEAR);
+    }
 }
