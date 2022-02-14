@@ -1,6 +1,38 @@
 # USN
 
-The source code of USN contract.
+USN is a NEAR-native USD stable token.
+
+## Contract Address
+
+| Mainnet  | Testnet     |
+|----------|-------------|
+| usn.near | usn.testnet |
+
+## Buy and sell
+
+USN token provides in-built _currency exchange_ API: `buy` and `sell`.
+
+```rust
+#[payable]
+pub fn buy(&mut self) -> Balance
+
+pub fn sell(&mut self, amount: U128) -> Balance
+```
+Example of usage with NEAR CLI:
+
+```bash
+# Register an account in the USN contract.
+near call usn.testnet storage_deposit '' --accountId alice.testnet --amount 0.00125
+
+# Send NEAR, buy USN.
+near call usn.testnet buy --accountId alice.testnet --amount 0.01
+
+# Check the USN balance.
+near call usn.testnet ft_balance_of --accountId alice.testnet --args '{"account_id": "alice.testnet"}'
+
+# Sell USN, receive NEAR.
+near call usn.testnet sell --accountId alice.testnet --args '{"amount": "118800"}'
+```
 
 ## Build
 
