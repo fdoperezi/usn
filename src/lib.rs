@@ -19,7 +19,7 @@ const TOKEN_DECIMAL: u8 = 6;
 const TOKEN_ONE: u128 = 1_000_000;
 const NEAR_ONE: u128 = 1_000_000_000_000_000_000_000_000;
 
-const DEFAULT_EXCHANGE_RATE: u128 = 12_000_000; // 1 N = 12 USDN
+const DEFAULT_EXCHANGE_RATE: u128 = 12_000_000; // 1 N = 12 USN
 const DEFAULT_SPREAD: u128 = 10_000; // 0.01 (10000 / 1000000)
 
 #[derive(
@@ -77,7 +77,7 @@ impl Contract {
         let metadata = FungibleTokenMetadata {
             spec: FT_METADATA_SPEC.to_string(),
             name: "USD Near".to_string(),
-            symbol: "USDN".to_string(),
+            symbol: "USN".to_string(),
             icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
             reference: None,
             reference_hash: None,

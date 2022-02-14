@@ -1,13 +1,13 @@
 {
-  "name": "usdn",
+  "name": "usn",
   "scripts": {
     "prebuild": "rustup target add wasm32-unknown-unknown",
     "build": "cargo build --target wasm32-unknown-unknown --release",
     "deploy": "./scripts/deploy.sh",
     "demo": "./scripts/demo.sh",
     "update": "node scripts/update.js",
-    "presandbox": "rm -rf /tmp/near-usdn-sandbox && near-sandbox --home /tmp/near-usdn-sandbox init",
-    "sandbox": "near-sandbox --home /tmp/near-usdn-sandbox run"
+    "presandbox": "rm -rf /tmp/near-usn-sandbox && near-sandbox --home /tmp/near-usn-sandbox init",
+    "sandbox": "near-sandbox --home /tmp/near-usn-sandbox run"
   },
   "devDependencies": {
     "bn": "^1.0.5",
