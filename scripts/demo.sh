@@ -8,8 +8,8 @@ SANDBOX=" --networkId sandbox --nodeUrl http://0.0.0.0:3030 --keyPath /tmp/near-
 TOTAL_SUPPLY=1000000000000000000000000000
 
 near deploy --wasm-file target/wasm32-unknown-unknown/release/usn.wasm \
-            --initFunction new_default_meta \
-            --initArgs "{\"owner_id\": \"${ID}\", \"total_supply\": \"${TOTAL_SUPPLY}\"}" \
+            --initFunction new \
+            --initArgs '{"owner_id": "'${ID}'"}' \
             --account-id $ID \
             --master-account $ID \
             $SANDBOX

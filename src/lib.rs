@@ -77,12 +77,9 @@ const DATA_IMAGE_SVG_NEAR_ICON: &str =
 
 #[near_bindgen]
 impl Contract {
-    // Initializes the contract with the given total supply owned by the given `owner_id` with
-    // default metadata (for example purposes only).
+    // Initializes the contract owned by the given `owner_id` with default metadata.
     #[init]
-    pub fn new() -> Self {
-        let owner_id = env::signer_account_id();
-
+    pub fn new(owner_id: AccountId) -> Self {
         let metadata = FungibleTokenMetadata {
             spec: FT_METADATA_SPEC.to_string(),
             name: "USD Near".to_string(),
@@ -432,7 +429,7 @@ mod tests {
         const TOTAL_SUPPLY: Balance = 0;
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let contract = Contract::new();
+        let contract = Contract::new(accounts(1));
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.ft_total_supply().0, TOTAL_SUPPLY);
         assert_eq!(contract.ft_balance_of(accounts(1)).0, TOTAL_SUPPLY);
@@ -452,7 +449,7 @@ mod tests {
 
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(2));
         contract.issue(U128::from(AMOUNT));
 
         testing_env!(context
@@ -488,7 +485,7 @@ mod tests {
     fn test_blacklist() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
@@ -527,7 +524,7 @@ mod tests {
     fn test_destroy_black_funds_panic() {
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(2));
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
@@ -548,7 +545,7 @@ mod tests {
     fn test_issuance() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
@@ -574,7 +571,7 @@ mod tests {
     fn test_redeem() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
@@ -595,7 +592,7 @@ mod tests {
     fn test_maintenance() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(1)
@@ -620,7 +617,7 @@ mod tests {
     fn test_extend_guardians_by_user() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         testing_env!(context.predecessor_account_id(accounts(2)).build());
         contract.extend_guardians(vec![accounts(3)]);
     }
@@ -629,7 +626,7 @@ mod tests {
     fn test_guardians() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         testing_env!(context.predecessor_account_id(accounts(1)).build());
         contract.extend_guardians(vec![accounts(2)]);
         assert!(contract.guardians.contains(&accounts(2)));
@@ -642,7 +639,7 @@ mod tests {
     fn test_cannot_remove_guardians() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         testing_env!(context.predecessor_account_id(accounts(1)).build());
         contract.extend_guardians(vec![accounts(2)]);
         assert!(contract.guardians.contains(&accounts(2)));
@@ -654,7 +651,7 @@ mod tests {
     fn test_cannot_buy_sell() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         testing_env!(context.predecessor_account_id(accounts(2)).build());
         contract.buy();
     }
@@ -664,7 +661,7 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
 
-        let mut contract = Contract::new();
+        let mut contract = Contract::new(accounts(1));
         contract.extend_guardians(vec![accounts(2)]);
 
         testing_env!(context
