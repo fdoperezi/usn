@@ -3,6 +3,7 @@
   "scripts": {
     "prebuild": "rustup target add wasm32-unknown-unknown",
     "build": "cargo build --target wasm32-unknown-unknown --release",
+    "build:docker": "./scripts/build-docker.sh",
     "deploy": "./scripts/deploy.sh",
     "demo": "./scripts/demo.sh",
     "update": "node scripts/update.js",
