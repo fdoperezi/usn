@@ -639,6 +639,18 @@ mod tests {
 
     #[test]
     #[should_panic]
+    fn test_cannot_remove_guardians() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context.predecessor_account_id(accounts(1)).build());
+        contract.extend_guardians(vec![accounts(2)]);
+        assert!(contract.guardians.contains(&accounts(2)));
+        contract.remove_guardians(vec![accounts(3)]);
+    }
+
+    #[test]
+    #[should_panic]
     fn test_cannot_buy_sell() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());

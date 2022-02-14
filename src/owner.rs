@@ -37,7 +37,9 @@ impl Contract {
     pub fn remove_guardians(&mut self, guardians: Vec<AccountId>) {
         self.assert_owner();
         for guardian in guardians {
-            self.guardians.remove(&guardian);
+            if !self.guardians.remove(&guardian) {
+                env::panic_str(&format!("The guardian '{}' doesn't exist", guardian));
+            }
         }
     }
 }
