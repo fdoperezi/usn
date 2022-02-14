@@ -11,7 +11,7 @@ impl Contract {
     pub(crate) fn assert_owner_or_guardian(&self) {
         let predecessor_id = env::predecessor_account_id();
         if predecessor_id != self.owner_id && !self.guardians.contains(&predecessor_id) {
-            env::panic_str("This method can be called only bu owner or guardian")
+            env::panic_str("This method can be called only by owner or guardian")
         }
     }
 
