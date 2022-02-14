@@ -4,18 +4,29 @@ USN is a NEAR-native USD stable token.
 
 ## Contract Address
 
-| Mainnet  | Testnet     |
-|----------|-------------|
-| usn.near | usn.testnet |
+| Mainnet              | Testnet     |
+|----------------------|-------------|
+| usn.binary-star.near | -           |
 
-## Buy and sell
+## Add a Guardian
+
+Guardians can be added and removed by owner.
+```rust
+pub fn extend_guardians(&mut self, guardians: Vec<AccountId>);
+pub fn remove_guardians(&mut self, guardians: Vec<AccountId>);
+```
+Example:
+```bash
+near call usn.binary-star.near extend_guardians --accountId binary-star.near --args '{"guardians": ["alice.near"]}'
+```
+
+## Buy and Sell
 
 USN token provides in-built _currency exchange_ API: `buy` and `sell`.
 
 ```rust
 #[payable]
 pub fn buy(&mut self) -> Balance;
-
 pub fn sell(&mut self, amount: U128) -> Balance;
 ```
 Example of usage with NEAR CLI:
