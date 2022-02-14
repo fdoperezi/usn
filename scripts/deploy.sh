@@ -15,7 +15,15 @@ near deploy --wasm-file target/wasm32-unknown-unknown/release/usn.wasm \
 
 near call $ID new \
             --account-id $ID \
-            --args '{"total_supply": "'$TOTAL_SUPPLY'"}' \
+            --args '{}' \
             --networkId sandbox \
             --nodeUrl http://0.0.0.0:3030 \
             --keyPath /tmp/near-usn-sandbox/validator_key.json
+
+status=$?
+
+if [ status = 0 ]; then
+  echo DEPLOYED;
+else
+  echo DEPLOYED with warnings;
+fi

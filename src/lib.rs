@@ -17,6 +17,7 @@ use near_sdk::{
 
 use std::convert::TryFrom;
 
+const NO_DEPOSIT: Balance = 0;
 const TOKEN_DECIMAL: u8 = 6;
 
 const TOKEN_ONE: u128 = 1_000_000;
@@ -79,7 +80,7 @@ impl Contract {
     // Initializes the contract with the given total supply owned by the given `owner_id` with
     // default metadata (for example purposes only).
     #[init]
-    pub fn new(total_supply: U128) -> Self {
+    pub fn new() -> Self {
         let owner_id = env::signer_account_id();
 
         let metadata = FungibleTokenMetadata {
@@ -104,7 +105,7 @@ impl Contract {
         };
 
         this.token.internal_register_account(&owner_id);
-        this.token.internal_deposit(&owner_id, total_supply.into());
+        this.token.internal_deposit(&owner_id, NO_DEPOSIT);
         this
     }
 
@@ -199,8 +200,8 @@ impl Contract {
         self.status = ContractStatus::Working;
     }
 
-    // Buys tokens for NEAR coins.
-    // Returns amount of purchased tokens.
+    // Buys USN tokens for NEAR tokens.
+    // Returns amount of purchased USN tokens.
     // TODO: Rework this PoC.
     #[payable]
     pub fn buy(&mut self) -> Balance {
@@ -208,13 +209,12 @@ impl Contract {
         let buyer = env::predecessor_account_id();
         let spread = TOKEN_ONE - self.spread; // 1 - 0.01
         let amount = env::attached_deposit() * spread * self.exchange_rate / (NEAR_ONE * TOKEN_ONE);
-        self.token
-            .internal_transfer(&self.owner_id, &buyer, amount, Some("Purchased".to_owned()));
+        self.token.internal_deposit(&buyer, amount);
         amount
     }
 
-    // Sells tokens getting NEAR coins.
-    // Return amount of purchased Near coins.
+    // Sells USN tokens getting NEAR tokens.
+    // Return amount of purchased NEAR tokens.
     // TODO: Rework this PoC.
     pub fn sell(&mut self, amount: U128) -> Balance {
         self.assert_owner_or_guardian();
@@ -222,8 +222,7 @@ impl Contract {
         let seller = env::predecessor_account_id();
         let spread = TOKEN_ONE + self.spread; // 1 + 0.01
         let deposit = (amount * spread * NEAR_ONE) / (self.exchange_rate * TOKEN_ONE);
-        self.token
-            .internal_transfer(&seller, &self.owner_id, amount, Some("Sold".to_owned()));
+        self.token.internal_withdraw(&seller, amount);
         Promise::new(seller).transfer(deposit);
         deposit
     }
@@ -419,8 +418,6 @@ mod tests {
 
     use super::*;
 
-    const TOTAL_SUPPLY: Balance = 1_000_000_000_000_000;
-
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
@@ -432,9 +429,10 @@ mod tests {
 
     #[test]
     fn test_new() {
+        const TOTAL_SUPPLY: Balance = 0;
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let contract = Contract::new(TOTAL_SUPPLY.into());
+        let contract = Contract::new();
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.ft_total_supply().0, TOTAL_SUPPLY);
         assert_eq!(contract.ft_balance_of(accounts(1)).0, TOTAL_SUPPLY);
@@ -450,9 +448,13 @@ mod tests {
 
     #[test]
     fn test_transfer() {
+        const AMOUNT: Balance = 3_000_000_000_000_000_000_000_000;
+
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
-        let mut contract = Contract::new(TOTAL_SUPPLY.into());
+        let mut contract = Contract::new();
+        contract.issue(U128::from(AMOUNT));
+
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(contract.storage_balance_bounds().min.into())
@@ -466,7 +468,7 @@ mod tests {
             .attached_deposit(1)
             .predecessor_account_id(accounts(2))
             .build());
-        let transfer_amount = TOTAL_SUPPLY / 3;
+        let transfer_amount = AMOUNT / 3;
         contract.ft_transfer(accounts(1), transfer_amount.into(), None);
 
         testing_env!(context
@@ -477,7 +479,7 @@ mod tests {
             .build());
         assert_eq!(
             contract.ft_balance_of(accounts(2)).0,
-            (TOTAL_SUPPLY - transfer_amount)
+            (AMOUNT - transfer_amount)
         );
         assert_eq!(contract.ft_balance_of(accounts(1)).0, transfer_amount);
     }
@@ -486,7 +488,7 @@ mod tests {
     fn test_blacklist() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new(TOTAL_SUPPLY.into());
+        let mut contract = Contract::new();
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
@@ -510,7 +512,7 @@ mod tests {
             contract.get_blacklist_status(&accounts(1)),
             BlackListStatus::Allowable
         );
-        let transfer_amount = TOTAL_SUPPLY / 3;
+        let transfer_amount = 3;
         contract.issue(U128::from(transfer_amount));
 
         contract.add_to_blacklist(&accounts(1));
@@ -525,7 +527,7 @@ mod tests {
     fn test_destroy_black_funds_panic() {
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
-        let mut contract = Contract::new(TOTAL_SUPPLY.into());
+        let mut contract = Contract::new();
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
@@ -546,7 +548,7 @@ mod tests {
     fn test_issuance() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new(TOTAL_SUPPLY.into());
+        let mut contract = Contract::new();
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
@@ -572,7 +574,7 @@ mod tests {
     fn test_redeem() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new(TOTAL_SUPPLY.into());
+        let mut contract = Contract::new();
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
@@ -593,7 +595,7 @@ mod tests {
     fn test_maintenance() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new(TOTAL_SUPPLY.into());
+        let mut contract = Contract::new();
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(1)
