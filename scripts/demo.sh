@@ -12,35 +12,23 @@ near deploy --wasm-file target/wasm32-unknown-unknown/release/usn.wasm \
             --initArgs '{"owner_id": "'${ID}'"}' \
             --account-id $ID \
             --master-account $ID \
+            --force \
             $SANDBOX
 
 echo -e "${NC}"
 near create-account bob.$ID --masterAccount $ID --initialBalance 1 $SANDBOX
 near call $ID storage_deposit '' --accountId bob.$ID --amount 0.00125 $SANDBOX
 
+echo -e "\n${RED}BOB BUYS SOME TOKENS:${NC}"
+near call $ID extend_guardians --accountId $ID --args '{"guardians": ["'bob.$ID'"]}' $SANDBOX
+near call $ID buy --accountId bob.$ID --amount 0.1 $SANDBOX
+near view $ID ft_balance_of --args '{"account_id": "'bob.$ID'"}' $SANDBOX
+
 echo -e "\n${RED}TOTAL SUPPLY:${NC}"
 near view $ID ft_total_supply --args '{}' $SANDBOX
 
-echo -e "\n${RED}BALANCE OF MAIN ACCOUNT:${NC}"
-near view $ID ft_balance_of --args '{"account_id": "'$ID'"}' $SANDBOX
-
-echo -e "\n${RED}ISSUE:${NC}"
-near call $ID issue --accountId $ID --args '{"amount": "123456789"}' $SANDBOX
-
-echo -e "\n${RED}BALANCE OF MAIN ACCOUNT:${NC}"
-near view $ID ft_balance_of --args '{"account_id": "'$ID'"}' $SANDBOX
-
-echo -e "\n${RED}REDEEM:${NC}"
-near call $ID redeem --accountId $ID --args '{"amount": "123456789"}' $SANDBOX
-
-echo -e "\n${RED}BALANCE OF MAIN ACCOUNT:${NC}"
-near view $ID ft_balance_of --args '{"account_id": "'$ID'"}' $SANDBOX
-
-echo -e "\n${RED}BALANCE OF BOB ACCOUNT:${NC}"
-near view $ID ft_balance_of --args '{"account_id": "'bob.$ID'"}' $SANDBOX
-
 echo -e "\n${RED}TRANSFER:${NC}"
-near call $ID ft_transfer --accountId $ID --args '{"receiver_id": "'bob.$ID'", "amount": "1"}' --amount 0.000000000000000000000001 $SANDBOX
+near call $ID ft_transfer --accountId bob.$ID --args '{"receiver_id": "'$ID'", "amount": "1"}' --amount 0.000000000000000000000001 $SANDBOX
 
 echo -e "\n${RED}IS BOB IN THE BLACKLIST:${NC}"
 near call $ID get_blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
