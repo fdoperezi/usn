@@ -185,6 +185,9 @@ impl Contract {
     #[payable]
     pub fn buy(&mut self) -> Balance {
         self.assert_owner_or_guardian();
+        self.abort_if_pause();
+        self.abort_if_blacklisted();
+
         let buyer = env::predecessor_account_id();
         let spread = TOKEN_ONE - self.spread; // 1 - 0.01
         let amount = env::attached_deposit() * spread * self.exchange_rate / (NEAR_ONE * TOKEN_ONE);
@@ -197,6 +200,9 @@ impl Contract {
     // TODO: Rework this PoC.
     pub fn sell(&mut self, amount: U128) -> Balance {
         self.assert_owner_or_guardian();
+        self.abort_if_pause();
+        self.abort_if_blacklisted();
+
         let amount = u128::from(amount);
         let seller = env::predecessor_account_id();
         let spread = TOKEN_ONE + self.spread; // 1 + 0.01
@@ -249,13 +255,20 @@ impl Contract {
     #[init(ignore_state)]
     #[private]
     pub fn migrate() -> Self {
-        let this: Contract = env::state_read().expect("Contract is not initialized.");
+        let this: Contract = env::state_read().expect("Contract is not initialized");
         this
     }
 
     fn abort_if_pause(&self) {
         if self.status == ContractStatus::Paused {
-            env::panic_str("Operation aborted because the contract under maintenance")
+            env::panic_str("The contract is under maintenance")
+        }
+    }
+
+    fn abort_if_blacklisted(&self) {
+        let account_id = env::predecessor_account_id();
+        if self.get_blacklist_status(&account_id) != BlackListStatus::Allowable {
+            env::panic_str(&format!("Account '{}' is banned", account_id));
         }
     }
 
@@ -311,17 +324,11 @@ impl FungibleTokenCore for Contract {
     #[payable]
     fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>) {
         self.abort_if_pause();
+        self.abort_if_blacklisted();
         let sender_id = AccountId::try_from(env::signer_account_id())
             .expect("Couldn't validate sender address");
-        match self.get_blacklist_status(&sender_id) {
-            BlackListStatus::Allowable => {
-                assert!(u128::from(self.ft_balance_of(sender_id)) >= u128::from(amount));
-                self.token.ft_transfer(receiver_id.clone(), amount, memo);
-            }
-            BlackListStatus::Banned => {
-                env::panic_str("Signer account is banned. Operation is not allowed.");
-            }
-        };
+        assert!(u128::from(self.ft_balance_of(sender_id)) >= u128::from(amount));
+        self.token.ft_transfer(receiver_id.clone(), amount, memo);
     }
 
     #[payable]
@@ -333,18 +340,12 @@ impl FungibleTokenCore for Contract {
         msg: String,
     ) -> PromiseOrValue<U128> {
         self.abort_if_pause();
+        self.abort_if_blacklisted();
         let sender_id = AccountId::try_from(env::signer_account_id())
             .expect("Couldn't validate sender address");
-        match self.get_blacklist_status(&sender_id) {
-            BlackListStatus::Allowable => {
-                assert!(u128::from(self.ft_balance_of(sender_id)) >= u128::from(amount));
-                self.token
-                    .ft_transfer_call(receiver_id.clone(), amount, memo, msg)
-            }
-            BlackListStatus::Banned => {
-                env::panic_str("Signer account is banned. Operation is not allowed.")
-            }
-        }
+        assert!(u128::from(self.ft_balance_of(sender_id)) >= u128::from(amount));
+        self.token
+            .ft_transfer_call(receiver_id.clone(), amount, memo, msg)
     }
 
     fn ft_total_supply(&self) -> U128 {
@@ -614,5 +615,50 @@ mod tests {
             .build());
         assert_eq!(contract.buy(), 11880000);
         assert!(contract.sell(U128::from(1188000)) < ONE_NEAR);
+    }
+
+    #[test]
+    #[should_panic(expected = "Account 'charlie' is banned")]
+    fn test_cannot_buy() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+        contract.extend_guardians(vec![accounts(2)]);
+        contract.add_to_blacklist(&accounts(2)); // It'll cause panic on buy.
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .build());
+        contract.storage_deposit(None, None);
+
+        const ONE_NEAR: Balance = 1_000_000_000_000_000_000_000_000;
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(ONE_NEAR)
+            .build());
+        contract.buy();
+    }
+
+    #[test]
+    #[should_panic(expected = "Account 'charlie' is banned")]
+    fn test_cannot_sell() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+        contract.extend_guardians(vec![accounts(2)]);
+        contract.add_to_blacklist(&accounts(2)); // It'll cause panic on sell.
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .build());
+        contract.storage_deposit(None, None);
+
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
+        contract.sell(U128::from(1));
     }
 }
