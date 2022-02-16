@@ -4,9 +4,9 @@ USN is a NEAR-native USD stable token.
 
 ## Contract Address
 
-| Mainnet              | Testnet     |
-|----------------------|-------------|
-| usn.binary-star.near | -           |
+| Mainnet  | Testnet  |
+|----------|----------|
+| usn      | -        |
 
 ## Add a Guardian
 
