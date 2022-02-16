@@ -13,10 +13,26 @@ near-sdk = {version = "4.0.0-pre.4", features = ["unstable"]}
 
 [profile.release]
 codegen-units = 1
-# Tell `rustc` to optimize for small code size.
 debug = false
 lto = true
 opt-level = "z"
-panic = "abort"
-# Opt into extra safety checks on arithmetic operations https://stackoverflow.com/a/64136471/249801
 overflow-checks = true
+panic = "abort"
+
+[profile.sandbox]
+inherits = "release"
+
+[profile.testnet]
+inherits = "release"
+
+[profile.mainnet]
+inherits = "release"
+
+[features]
+# Enables testnet configuration if expicitly stated.
+# It makes the USN contract use a testnet oracle.
+testnet = []
+
+# Enables mainnet configuration if expicitly stated.
+# It makes the USN contract use a main oracle.
+mainnet = []

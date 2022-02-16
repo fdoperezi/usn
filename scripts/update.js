@@ -8,7 +8,7 @@ const config = {
   networkId: 'sandbox',
   nodeUrl: 'http://0.0.0.0:3030',
   keyPath: '/tmp/near-usn-sandbox/validator_key.json',
-  contractPath: './target/wasm32-unknown-unknown/release/usn.wasm',
+  contractPath: './target/wasm32-unknown-unknown/sandbox/usn.wasm',
   accountId: 'test.near',
   contractId: 'test.near',
 };

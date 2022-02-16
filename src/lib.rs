@@ -1,4 +1,5 @@
 mod event;
+mod oracle;
 mod owner;
 
 use near_contract_standards::fungible_token::core::FungibleTokenCore;
@@ -9,26 +10,26 @@ use near_contract_standards::fungible_token::resolver::FungibleTokenResolver;
 use near_contract_standards::fungible_token::FungibleToken;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LazyOption, LookupMap, UnorderedSet};
-use near_sdk::json_types::U128;
+use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    assert_one_yocto, env, log, near_bindgen, sys, AccountId, Balance, BorshStorageKey, Gas,
-    PanicOnDefault, Promise, PromiseOrValue,
+    assert_one_yocto, env, ext_contract, log, near_bindgen, sys, AccountId, Balance,
+    BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
 };
 
 use std::convert::TryFrom;
+use std::fmt::Debug;
+
+use oracle::{ExchangeRate, Oracle};
 
 const NO_DEPOSIT: Balance = 0;
-const TOKEN_DECIMAL: u8 = 6;
-
-const TOKEN_ONE: u128 = 1_000_000;
-const NEAR_ONE: u128 = 1_000_000_000_000_000_000_000_000;
-
-const DEFAULT_EXCHANGE_RATE: u128 = 12_000_000; // 1 N = 12 USN
-const DEFAULT_SPREAD: u128 = 10_000; // 0.01 (10000 / 1000000)
+const TOKEN_DECIMAL: u8 = 18;
+const DEFAULT_SPREAD: Balance = 10_000; // 0.01 (10^4 / 10^6)
+const SPREAD_DECIMAL: u8 = 6;
+const CALL_GAS: Gas = Gas(5_000_000_000_000);
 
 #[derive(BorshStorageKey, BorshSerialize)]
-pub(crate) enum StorageKey {
+enum StorageKey {
     Guardians,
     Token,
     TokenMetadata,
@@ -69,16 +70,46 @@ pub struct Contract {
     metadata: LazyOption<FungibleTokenMetadata>,
     black_list: LookupMap<AccountId, BlackListStatus>,
     status: ContractStatus,
-    exchange_rate: u128,
-    spread: u128,
+    oracle: Oracle,
+    spread: Balance,
 }
 
 const DATA_IMAGE_SVG_NEAR_ICON: &str =
     "data:image/svg+xml;charset=UTF-8,%3csvg width='245' height='245' viewBox='0 0 245 245' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='122.5' cy='122.5' r='122.5' fill='white'/%3e%3cpath d='M78 179V67H93.3342L152.668 154.935V67H167V179H151.666L92.3325 90.9891V179H78Z' fill='black'/%3e%3cpath d='M150 104C147.239 104 145 106.239 145 109C145 111.761 147.239 114 150 114V104ZM171 114C173.761 114 176 111.761 176 109C176 106.239 173.761 104 171 104V114ZM150 114H171V104H150V114Z' fill='black'/%3e%3cpath d='M150 125C147.239 125 145 127.239 145 130C145 132.761 147.239 135 150 135V125ZM171 135C173.761 135 176 132.761 176 130C176 127.239 173.761 125 171 125V135ZM150 135H171V125H150V135Z' fill='black'/%3e%3c/svg%3e";
 
+#[ext_contract(ext_self)]
+trait ContractCallback {
+    #[private]
+    fn buy_with_rate_callback(&self, near: Balance, #[callback] rate: ExchangeRate) -> Balance;
+
+    #[private]
+    fn sell_with_rate_callback(&self, tokens: Balance, #[callback] rate: ExchangeRate) -> Balance;
+}
+
 #[near_bindgen]
 impl Contract {
-    // Initializes the contract owned by the given `owner_id` with default metadata.
+    #[private]
+    pub fn buy_with_rate_callback(
+        &mut self,
+        near: Balance,
+        #[callback] rate: ExchangeRate,
+    ) -> Balance {
+        self.finish_buy(near, rate)
+    }
+
+    #[private]
+    pub fn sell_with_rate_callback(
+        &mut self,
+        tokens: Balance,
+        #[callback] rate: ExchangeRate,
+    ) -> Balance {
+        self.finish_sell(tokens, rate)
+    }
+}
+
+#[near_bindgen]
+impl Contract {
+    /// Initializes the contract owned by the given `owner_id` with default metadata.
     #[init]
     pub fn new(owner_id: AccountId) -> Self {
         let metadata = FungibleTokenMetadata {
@@ -98,7 +129,7 @@ impl Contract {
             metadata: LazyOption::new(StorageKey::TokenMetadata, Some(&metadata)),
             black_list: LookupMap::new(StorageKey::Blacklist),
             status: ContractStatus::Working,
-            exchange_rate: DEFAULT_EXCHANGE_RATE,
+            oracle: Oracle::default(),
             spread: DEFAULT_SPREAD,
         };
 
@@ -166,7 +197,7 @@ impl Contract {
             .expect("Failed to decrease total supply");
     }
 
-    // Pauses the contract. Only can be called by owner or guardians.
+    /// Pauses the contract. Only can be called by owner or guardians.
     #[payable]
     pub fn pause(&mut self) {
         assert_one_yocto();
@@ -174,24 +205,48 @@ impl Contract {
         self.status = ContractStatus::Paused;
     }
 
-    // Resumes the contract. Only can be called by owner.
+    /// Resumes the contract. Only can be called by owner.
     pub fn resume(&mut self) {
         self.assert_owner();
         self.status = ContractStatus::Working;
     }
 
-    // Buys USN tokens for NEAR tokens.
-    // Returns amount of purchased USN tokens.
-    // TODO: Rework this PoC.
+    /// Buys USN tokens for NEAR tokens.
+    /// Can make cross-contract call to an oracle.
+    /// Returns amount of purchased USN tokens.
     #[payable]
-    pub fn buy(&mut self) -> Balance {
+    pub fn buy(&mut self) -> PromiseOrValue<Balance> {
         self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
 
-        let buyer = env::predecessor_account_id();
-        let spread = TOKEN_ONE - self.spread; // 1 - 0.01
-        let amount = env::attached_deposit() * spread * self.exchange_rate / (NEAR_ONE * TOKEN_ONE);
+        let near = env::attached_deposit();
+        let exchange_rate = self.oracle.get_exchange_rate();
+
+        match exchange_rate {
+            PromiseOrValue::Value(rate) => PromiseOrValue::Value(self.finish_buy(near, rate)),
+            PromiseOrValue::Promise(rate) => {
+                PromiseOrValue::Promise(rate.then(ext_self::buy_with_rate_callback(
+                    near,
+                    env::current_account_id(),
+                    NO_DEPOSIT,
+                    CALL_GAS,
+                )))
+            }
+        }
+    }
+
+    /// Completes the purchase (NEAR -> USN). It is called in 2 cases:
+    /// 1. Direct call from the `buy` method if the exchange rate cache is valid.
+    /// 2. Indirect callback from the cross-contract call after getting a fresh exchange rate.
+    fn finish_buy(&mut self, near: Balance, rate: ExchangeRate) -> Balance {
+        // An account of the original request. In a case of cross-contract call,
+        // it's the account of the original `buy` operation.
+        let buyer = env::signer_account_id();
+
+        let spread = 10u128.pow(SPREAD_DECIMAL as u32) - self.spread; // 1 - 0.01
+        let amount = near * rate.multiplier() * spread
+            / 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL));
         self.token.internal_deposit(&buyer, amount);
 
         event::emit::ft_mint(&buyer, amount, None);
@@ -199,18 +254,42 @@ impl Contract {
         amount
     }
 
-    // Sells USN tokens getting NEAR tokens.
-    // Return amount of purchased NEAR tokens.
-    // TODO: Rework this PoC.
-    pub fn sell(&mut self, amount: U128) -> Balance {
+    /// Sells USN tokens getting NEAR tokens.
+    /// Return amount of purchased NEAR tokens.
+    pub fn sell(&mut self, amount: U128) -> PromiseOrValue<Balance> {
         self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
 
-        let amount = u128::from(amount);
-        let seller = env::predecessor_account_id();
-        let spread = TOKEN_ONE + self.spread; // 1 + 0.01
-        let deposit = (amount * spread * NEAR_ONE) / (self.exchange_rate * TOKEN_ONE);
+        let amount = Balance::from(amount);
+        let exchange_rate = self.oracle.get_exchange_rate();
+
+        match exchange_rate {
+            PromiseOrValue::Value(rate) => PromiseOrValue::Value(self.finish_sell(amount, rate)),
+            PromiseOrValue::Promise(rate) => rate
+                .then(ext_self::sell_with_rate_callback(
+                    amount,
+                    env::current_account_id(),
+                    NO_DEPOSIT,
+                    CALL_GAS,
+                ))
+                .into(),
+        }
+    }
+
+    /// Finishes the sell (USN -> NEAR). It is called in 2 cases:
+    /// 1. Direct call from the `sell` method if the exchange rate cache is valid.
+    /// 2. Indirect callback from the cross-contract call after getting a fresh exchange rate.
+    fn finish_sell(&mut self, amount: Balance, rate: ExchangeRate) -> Balance {
+        // An account of the original request. In a case of cross-contract call,
+        // it's the account of the original `sell` operation.
+        let seller = env::signer_account_id();
+
+        let spread = 10u128.pow(SPREAD_DECIMAL as u32) + self.spread; // 1 + 0.01
+        let deposit = amount
+            * 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL))
+            / (rate.multiplier() * spread);
+
         self.token.internal_withdraw(&seller, amount);
 
         event::emit::ft_burn(&seller, amount, None);
@@ -225,27 +304,21 @@ impl Contract {
         self.status.clone()
     }
 
-    /**
-     * @dev Returns the name of the token.
-     */
+    /// Returns the name of the token.
     pub fn name(&self) -> String {
         self.abort_if_pause();
         let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").name
     }
 
-    /**
-     * Returns the symbol of the token.
-     */
+    /// Returns the symbol of the token.
     pub fn symbol(&self) -> String {
         self.abort_if_pause();
         let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").symbol
     }
 
-    /**
-     * Returns the decimals places of the token.
-     */
+    /// Returns the decimals places of the token.
     pub fn decimals(&self) -> u8 {
         self.abort_if_pause();
         let metadata = self.metadata.get();
@@ -618,8 +691,32 @@ mod tests {
             .predecessor_account_id(accounts(2))
             .attached_deposit(ONE_NEAR)
             .build());
-        assert_eq!(contract.buy(), 11880000);
-        assert!(contract.sell(U128::from(1188000)) < ONE_NEAR);
+
+        contract
+            .oracle
+            .set_exchange_rate(ExchangeRate::test_fresh_rate());
+
+        match contract.buy() {
+            PromiseOrValue::Value(v) => assert_eq!(v, 11032461000000000000),
+            _ => panic!("Must return a value"),
+        };
+        match contract.sell(U128::from(11032461000000000000)) {
+            PromiseOrValue::Value(v) => assert!(v < ONE_NEAR && v > (ONE_NEAR * 8 / 10)),
+            _ => panic!("Must return a value"),
+        };
+
+        contract
+            .oracle
+            .set_exchange_rate(ExchangeRate::test_old_rate());
+
+        match contract.buy() {
+            PromiseOrValue::Value(_) => panic!("Must return a promise"),
+            _ => {}
+        };
+        // match contract.sell(U128::from(9900000000000000000)) {
+        //     PromiseOrValue::Value(_) => panic!("Must return a promise"),
+        //     _ => {},
+        // };
     }
 
     #[test]
