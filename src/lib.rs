@@ -165,24 +165,6 @@ impl Contract {
             .expect("Failed to decrease total supply");
     }
 
-    // Issue a new amount of tokens
-    // these tokens are deposited into the owner address
-    pub fn issue(&mut self, amount: U128) {
-        self.assert_owner();
-        self.abort_if_pause();
-        self.token.internal_deposit(&self.owner_id, amount.into());
-    }
-
-    // Redeem tokens (burn).
-    // These tokens are withdrawn from the owner address
-    // if the balance must be enough to cover the redeem
-    // or the call will fail.
-    pub fn redeem(&mut self, amount: U128) {
-        self.assert_owner();
-        self.abort_if_pause();
-        self.token.internal_withdraw(&self.owner_id, amount.into());
-    }
-
     // Pauses the contract. Only can be called by owner or guardians.
     #[payable]
     pub fn pause(&mut self) {
@@ -450,7 +432,7 @@ mod tests {
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
         let mut contract = Contract::new(accounts(2));
-        contract.issue(U128::from(AMOUNT));
+        contract.token.internal_deposit(&accounts(2), AMOUNT);
 
         testing_env!(context
             .storage_usage(env::storage_usage())
@@ -486,11 +468,11 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = Contract::new(accounts(1));
+
+        // Act as a user.
         testing_env!(context
-            .storage_usage(env::storage_usage())
-            .predecessor_account_id(accounts(1))
-            .current_account_id(accounts(1))
-            .signer_account_id(accounts(1))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .predecessor_account_id(accounts(2))
             .build());
 
         assert_eq!(
@@ -498,94 +480,48 @@ mod tests {
             BlackListStatus::Allowable
         );
 
-        contract.add_to_blacklist(&accounts(1));
+        contract.storage_deposit(None, None);
+        contract.token.internal_deposit(&accounts(2), 1000);
+        assert_eq!(contract.ft_balance_of(accounts(2)), U128::from(1000));
+
+        // Act as owner.
+        testing_env!(context.predecessor_account_id(accounts(1)).build());
+
+        contract.add_to_blacklist(&accounts(2));
         assert_eq!(
-            contract.get_blacklist_status(&accounts(1)),
+            contract.get_blacklist_status(&accounts(2)),
             BlackListStatus::Banned
         );
 
-        contract.remove_from_blacklist(&accounts(1));
+        contract.remove_from_blacklist(&accounts(2));
         assert_eq!(
-            contract.get_blacklist_status(&accounts(1)),
+            contract.get_blacklist_status(&accounts(2)),
             BlackListStatus::Allowable
         );
-        let transfer_amount = 3;
-        contract.issue(U128::from(transfer_amount));
 
-        contract.add_to_blacklist(&accounts(1));
+        contract.add_to_blacklist(&accounts(2));
         let total_supply_before = contract.token.total_supply;
 
-        contract.destroy_black_funds(&accounts(1));
+        assert_ne!(contract.ft_balance_of(accounts(2)), U128::from(0));
+
+        contract.destroy_black_funds(&accounts(2));
         assert_ne!(total_supply_before, contract.token.total_supply);
+
+        assert_eq!(contract.ft_balance_of(accounts(2)), U128::from(0));
     }
 
     #[test]
     #[should_panic]
-    fn test_destroy_black_funds_panic() {
+    fn test_user_cannot_destroy_black_funds() {
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
         let mut contract = Contract::new(accounts(2));
         testing_env!(context
             .storage_usage(env::storage_usage())
             .predecessor_account_id(accounts(1))
-            .current_account_id(accounts(1))
-            .signer_account_id(accounts(1))
             .build());
 
-        contract.issue(U128::from(1000));
         contract.add_to_blacklist(&accounts(1));
-        contract.destroy_black_funds(&accounts(1));
-
-        contract.issue(U128::from(1000));
-        contract.remove_from_blacklist(&accounts(1));
-        contract.destroy_black_funds(&accounts(1));
-    }
-
-    #[test]
-    fn test_issuance() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = Contract::new(accounts(1));
-        testing_env!(context
-            .storage_usage(env::storage_usage())
-            .predecessor_account_id(accounts(1))
-            .current_account_id(accounts(1))
-            .signer_account_id(accounts(1))
-            .build());
-
-        let previous_total_supply = contract.ft_total_supply().0;
-        let previous_balance = contract.ft_balance_of(accounts(1)).0;
-        let reissuance_balance: Balance = 1_234_567_891;
-        contract.issue(U128::from(reissuance_balance));
-        assert_eq!(
-            previous_total_supply + reissuance_balance,
-            contract.ft_total_supply().0
-        );
-        assert_eq!(
-            previous_balance + reissuance_balance,
-            contract.ft_balance_of(accounts(1)).0
-        );
-    }
-
-    #[test]
-    fn test_redeem() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = Contract::new(accounts(1));
-        testing_env!(context
-            .storage_usage(env::storage_usage())
-            .predecessor_account_id(accounts(1))
-            .current_account_id(accounts(1))
-            .signer_account_id(accounts(1))
-            .build());
-
-        let previous_total_supply = contract.ft_total_supply();
-        let previous_balance = contract.ft_balance_of(accounts(1));
-        let reissuance_balance: Balance = 1_234_567_891;
-        contract.issue(U128::from(reissuance_balance));
-        contract.redeem(U128::from(reissuance_balance));
-        assert_eq!(previous_total_supply, contract.ft_total_supply());
-        assert_eq!(previous_balance, contract.ft_balance_of(accounts(1)));
     }
 
     #[test]
