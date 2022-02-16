@@ -1,3 +1,4 @@
+mod event;
 mod owner;
 
 use near_contract_standards::fungible_token::core::FungibleTokenCore;
@@ -192,6 +193,9 @@ impl Contract {
         let spread = TOKEN_ONE - self.spread; // 1 - 0.01
         let amount = env::attached_deposit() * spread * self.exchange_rate / (NEAR_ONE * TOKEN_ONE);
         self.token.internal_deposit(&buyer, amount);
+
+        event::emit::ft_mint(&buyer, amount, None);
+
         amount
     }
 
@@ -208,7 +212,11 @@ impl Contract {
         let spread = TOKEN_ONE + self.spread; // 1 + 0.01
         let deposit = (amount * spread * NEAR_ONE) / (self.exchange_rate * TOKEN_ONE);
         self.token.internal_withdraw(&seller, amount);
+
+        event::emit::ft_burn(&seller, amount, None);
+
         Promise::new(seller).transfer(deposit);
+
         deposit
     }
 
@@ -273,11 +281,11 @@ impl Contract {
     }
 
     fn on_account_closed(&mut self, account_id: AccountId, balance: Balance) {
-        log!("Closed @{} with {}", account_id, balance);
+        event::emit::storage_unregister(account_id, balance);
     }
 
-    fn on_tokens_burned(&mut self, account_id: &AccountId, amount: Balance) {
-        log!("Account @{} burned {}", account_id, amount);
+    fn on_tokens_burned(&mut self, account_id: AccountId, amount: Balance) {
+        event::emit::ft_burn(&account_id, amount, None)
     }
 }
 
@@ -373,10 +381,7 @@ impl FungibleTokenResolver for Contract {
             self.token
                 .internal_ft_resolve_transfer(&sender_id, receiver_id, amount);
         if burned_amount > 0 {
-            self.on_tokens_burned(
-                &AccountId::try_from(sender_id).expect("Couldn't validate sender address"),
-                burned_amount,
-            );
+            self.on_tokens_burned(sender_id, burned_amount);
         }
         used_amount.into()
     }
