@@ -1,3 +1,5 @@
+[![USN](https://github.com/binary-star-near/usn/actions/workflows/test.yaml/badge.svg?event=push)](https://github.com/binary-star-near/usn)
+
 # USN
 
 USN is a NEAR-native USD stable token.
