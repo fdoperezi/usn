@@ -39,7 +39,7 @@ const methods = {
   await account.signAndSendTransaction({
     receiverId: config.contractId,
     actions: [
-      nearAPI.transactions.functionCall('update', wasm, 100000000000000, '0'),
+      nearAPI.transactions.functionCall('upgrade', wasm, 100000000000000, '0'),
     ],
   });
 

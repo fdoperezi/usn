@@ -7,7 +7,7 @@
     "build:mainnet": "cargo build --target wasm32-unknown-unknown --profile mainnet --features mainnet",
     "deploy": "./scripts/deploy.sh",
     "demo": "./scripts/demo.sh",
-    "update": "node scripts/update.js",
+    "upgrade": "node scripts/upgrade.js",
     "sandbox:init": "rm -rf /tmp/near-usn-sandbox && near-sandbox --home /tmp/near-usn-sandbox init",
     "sandbox": "near-sandbox --home /tmp/near-usn-sandbox run"
   },

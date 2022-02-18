@@ -339,37 +339,15 @@ impl Contract {
         format!("{}:{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
     }
 
-    /// Should only be called by this contract on migration.
     /// This is NOOP implementation. KEEP IT if you haven't changed contract state.
+    /// Should only be called by this contract on migration.
     /// This method is called from `update()` method.
     /// For next version upgrades, change this function.
     #[init(ignore_state)]
     #[private]
     pub fn migrate() -> Self {
-        #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
-        struct ContractV011 {
-            owner_id: AccountId,
-            guardians: UnorderedSet<AccountId>,
-            token: FungibleToken,
-            metadata: LazyOption<FungibleTokenMetadata>,
-            black_list: LookupMap<AccountId, BlackListStatus>,
-            status: ContractStatus,
-            exchange_rate: u128,
-            spread: u128,
-        }
-
-        let old: ContractV011 = env::state_read().expect("Contract is not initialized");
-
-        Self {
-            owner_id: old.owner_id,
-            guardians: old.guardians,
-            token: old.token,
-            metadata: old.metadata,
-            black_list: old.black_list,
-            status: old.status,
-            spread: old.spread,
-            oracle: Oracle::default(),
-        }
+        let this: Contract = env::state_read().expect("Contract is not initialized");
+        this
     }
 
     fn abort_if_pause(&self) {
@@ -395,7 +373,7 @@ impl Contract {
 }
 
 #[no_mangle]
-pub fn update() {
+pub fn upgrade() {
     env::setup_panic_hook();
 
     let contract: Contract = env::state_read().expect("Contract is not initialized");
