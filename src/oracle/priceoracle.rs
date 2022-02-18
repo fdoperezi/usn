@@ -43,7 +43,7 @@ impl PriceData {
     }
 
     pub fn price(&self, asset: &AssetId) -> Price {
-        let asset_error = format!("Oracle MUST provide an exchange rate for {}", asset);
+        let asset_error = format!("Oracle has NOT provided an exchange rate for {}", asset);
         self.prices
             .iter()
             .filter(|aop| &aop.asset_id == asset)
