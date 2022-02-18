@@ -247,6 +247,11 @@ impl Contract {
         let spread = 10u128.pow(SPREAD_DECIMAL as u32) - self.spread; // 1 - 0.01
         let amount = near * rate.multiplier() * spread
             / 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL));
+
+        if amount == 0 {
+            env::panic_str("Not enough NEAR: attached deposit exchanges to 0 tokens");
+        }
+
         self.token.internal_deposit(&buyer, amount);
 
         event::emit::ft_mint(&buyer, amount, None);
@@ -262,6 +267,11 @@ impl Contract {
         self.abort_if_blacklisted();
 
         let amount = Balance::from(amount);
+
+        if amount == 0 {
+            env::panic_str("Not enough tokens to sell: exchange more than 0 tokens");
+        }
+
         let exchange_rate = self.oracle.get_exchange_rate();
 
         match exchange_rate {
@@ -735,10 +745,10 @@ mod tests {
             PromiseOrValue::Value(_) => panic!("Must return a promise"),
             _ => {}
         };
-        // match contract.sell(U128::from(9900000000000000000)) {
-        //     PromiseOrValue::Value(_) => panic!("Must return a promise"),
-        //     _ => {},
-        // };
+        match contract.sell(U128::from(9900000000000000000)) {
+            PromiseOrValue::Value(_) => panic!("Must return a promise"),
+            _ => {}
+        };
     }
 
     #[test]
@@ -784,5 +794,60 @@ mod tests {
 
         testing_env!(context.predecessor_account_id(accounts(2)).build());
         contract.sell(U128::from(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Not enough NEAR")]
+    fn test_cannot_buy_zero() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+        contract.extend_guardians(vec![accounts(2)]);
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .build());
+        contract.storage_deposit(None, None);
+
+        const TOO_LESS_NEAR: Balance = 90_000;
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(TOO_LESS_NEAR)
+            .build());
+
+        contract
+            .oracle
+            .set_exchange_rate(ExchangeRate::test_fresh_rate());
+        contract.buy();
+    }
+
+    #[test]
+    #[should_panic(expected = "Not enough tokens to sell")]
+    fn test_cannot_sell_zero() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+        contract.extend_guardians(vec![accounts(2)]);
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .build());
+        contract.storage_deposit(None, None);
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .signer_account_id(accounts(2))
+            .build());
+
+        contract.token.internal_deposit(&accounts(2), 1);
+        contract
+            .oracle
+            .set_exchange_rate(ExchangeRate::test_fresh_rate());
+        contract.sell(U128::from(0));
     }
 }
