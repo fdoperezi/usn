@@ -27,8 +27,8 @@ jobs:
         rustup toolchain install stable
         rustup default stable
         rustup target add wasm32-unknown-unknown
-        cargo build --target wasm32-unknown-unknown --profile testnet --feature testnet
-        cargo build --target wasm32-unknown-unknown --profile mainnet --feature mainnet
+        cargo build --target wasm32-unknown-unknown --profile testnet --features testnet
+        cargo build --target wasm32-unknown-unknown --profile mainnet --features mainnet
         mv target/wasm32-unknown-unknown/mainnet/usn.wasm target/usn.mainnet.wasm
         mv target/wasm32-unknown-unknown/testnet/usn.wasm target/usn.testnet.wasm
     - name: Publish

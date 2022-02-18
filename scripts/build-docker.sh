@@ -26,7 +26,7 @@ docker exec -it $NAME /bin/bash -c "\
 rustup toolchain install stable; \
 rustup default stable; \
 rustup target add wasm32-unknown-unknown; \
-cargo build --target wasm32-unknown-unknown --profile mainnet --feature mainnet"
+cargo build --target wasm32-unknown-unknown --profile mainnet --features mainnet"
 
 mkdir -p res
 cp $DIR/target/wasm32-unknown-unknown/mainnet/usn.wasm $DIR/res/usn.wasm

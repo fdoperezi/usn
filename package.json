@@ -3,8 +3,8 @@
   "scripts": {
     "prebuild": "rustup target add wasm32-unknown-unknown",
     "build": "cargo build --target wasm32-unknown-unknown --profile sandbox",
-    "build:testnet": "cargo build --target wasm32-unknown-unknown --profile testnet --feature testnet",
-    "build:mainnet": "cargo build --target wasm32-unknown-unknown --profile mainnet --feature mainnet",
+    "build:testnet": "cargo build --target wasm32-unknown-unknown --profile testnet --features testnet",
+    "build:mainnet": "cargo build --target wasm32-unknown-unknown --profile mainnet --features mainnet",
     "deploy": "./scripts/deploy.sh",
     "demo": "./scripts/demo.sh",
     "update": "node scripts/update.js",
