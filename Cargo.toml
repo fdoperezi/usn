@@ -15,7 +15,7 @@ near-sdk = {version = "4.0.0-pre.4", features = ["unstable"]}
 codegen-units = 1
 debug = false
 lto = true
-opt-level = "z"
+opt-level = "s"
 overflow-checks = true
 panic = "abort"
 

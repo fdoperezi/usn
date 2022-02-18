@@ -26,7 +26,7 @@ const NO_DEPOSIT: Balance = 0;
 const TOKEN_DECIMAL: u8 = 18;
 const DEFAULT_SPREAD: Balance = 10_000; // 0.01 (10^4 / 10^6)
 const SPREAD_DECIMAL: u8 = 6;
-const CALL_GAS: Gas = Gas(5_000_000_000_000);
+const GAS_FOR_PROMISE: Gas = Gas(5_000_000_000_000);
 
 #[derive(BorshStorageKey, BorshSerialize)]
 enum StorageKey {
@@ -230,7 +230,7 @@ impl Contract {
                     near,
                     env::current_account_id(),
                     NO_DEPOSIT,
-                    CALL_GAS,
+                    GAS_FOR_PROMISE,
                 )))
             }
         }
@@ -271,7 +271,7 @@ impl Contract {
                     amount,
                     env::current_account_id(),
                     NO_DEPOSIT,
-                    CALL_GAS,
+                    GAS_FOR_PROMISE,
                 ))
                 .into(),
         }

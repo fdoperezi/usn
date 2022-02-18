@@ -13,19 +13,19 @@ const CONFIG: OracleConfig = if cfg!(feature = "mainnet") {
     OracleConfig {
         oracle_address: "priceoracle.near",
         asset_id: "wrap.near", // NEARUSDT
-        gas: Gas(3_000_000_000_000),
+        gas: Gas(5_000_000_000_000),
     }
 } else if cfg!(feature = "testnet") {
     OracleConfig {
         oracle_address: "priceoracle.testnet",
         asset_id: "wrap.testnet", // NEARUSDT
-        gas: Gas(3_000_000_000_000),
+        gas: Gas(5_000_000_000_000),
     }
 } else {
     OracleConfig {
         oracle_address: "priceoracle.test.near",
         asset_id: "wrap.test.near",
-        gas: Gas(3_000_000_000_000),
+        gas: Gas(5_000_000_000_000),
     }
 };
 
