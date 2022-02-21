@@ -24,9 +24,11 @@ use oracle::{ExchangeRate, Oracle};
 
 const NO_DEPOSIT: Balance = 0;
 const TOKEN_DECIMAL: u8 = 18;
-const DEFAULT_SPREAD: Balance = 10_000; // 0.01 (10^4 / 10^6)
-const SPREAD_DECIMAL: u8 = 6;
 const GAS_FOR_PROMISE: Gas = Gas(5_000_000_000_000);
+
+const DEFAULT_SPREAD: Balance = 10_000; // 0.01 (10^4 / 10^6) = 1%
+const MAX_SPREAD: Balance = 50_000; // 0.05 = 5%
+const SPREAD_DECIMAL: u8 = 6;
 
 #[derive(BorshStorageKey, BorshSerialize)]
 enum StorageKey {
@@ -330,6 +332,22 @@ impl Contract {
     pub fn decimals(&self) -> u8 {
         let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").decimals
+    }
+
+    pub fn spread(&self) -> u128 {
+        self.spread
+    }
+
+    pub fn set_spread(&mut self, spread: Balance) {
+        self.assert_owner();
+        self.abort_if_pause();
+        if spread > MAX_SPREAD {
+            env::panic_str(&format!(
+                "Spread limit is {}%",
+                MAX_SPREAD / 10u128.pow(SPREAD_DECIMAL as u32)
+            ));
+        }
+        self.spread = spread;
     }
 
     pub fn get_version(&self) -> String {
@@ -819,5 +837,17 @@ mod tests {
             .oracle
             .set_exchange_rate(ExchangeRate::test_fresh_rate());
         contract.sell(U128::from(0));
+    }
+
+    #[test]
+    fn test_spread() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new(accounts(1));
+        assert_eq!(contract.spread(), DEFAULT_SPREAD);
+        contract.set_spread(MAX_SPREAD);
+        assert_eq!(contract.spread(), MAX_SPREAD);
+        let res = std::panic::catch_unwind(move || contract.set_spread(MAX_SPREAD + 1));
+        assert!(res.is_err());
     }
 }
