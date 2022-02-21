@@ -356,7 +356,7 @@ impl Contract {
 
     /// This is NOOP implementation. KEEP IT if you haven't changed contract state.
     /// Should only be called by this contract on migration.
-    /// This method is called from `update()` method.
+    /// This method is called from `upgrade()` method.
     /// For next version upgrades, change this function.
     #[init(ignore_state)]
     #[private]
