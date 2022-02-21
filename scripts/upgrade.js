@@ -14,7 +14,7 @@ const config = {
 };
 
 const methods = {
-  viewMethods: ['get_version'],
+  viewMethods: ['version'],
 };
 
 (async function () {
@@ -44,7 +44,7 @@ const methods = {
   });
 
   // Check that the contract has been upgraded.
-  // Change the `get_version` method returning 'UPGRADED:VERSION' to test this.
+  // Change the `version` method returning 'UPGRADED:VERSION' to test this.
   const contract = new nearAPI.Contract(account, config.contractId, methods);
-  assert.equal(await contract.get_version(), 'UPGRADED:VERSION');
+  assert.equal(await contract.version(), 'UPGRADED:VERSION');
 })();

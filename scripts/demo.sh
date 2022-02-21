@@ -31,15 +31,15 @@ echo -e "\n${RED}TRANSFER:${NC}"
 near call $ID ft_transfer --accountId bob.$ID --args '{"receiver_id": "'$ID'", "amount": "1"}' --amount 0.000000000000000000000001 $SANDBOX
 
 echo -e "\n${RED}IS BOB IN THE BLACKLIST:${NC}"
-near call $ID get_blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
+near call $ID blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
 
 echo -e "\n${RED}BOB TRYING HIMSELF ADD TO THE BLACKLIST:${NC}"
 near call $ID add_to_blacklist --accountId bob.$ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
-near call $ID get_blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
+near call $ID blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
 
 echo -e "\n${RED}TEST.NEAR TRYING ADD BOB TO THE BLACKLIST:${NC}"
 near call $ID add_to_blacklist --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
-near call $ID get_blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
+near call $ID blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
 
 echo -e "\n${RED}BURN BANNED BOB FUNDS:${NC}"
 near call $ID destroy_black_funds --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
@@ -47,7 +47,7 @@ near view $ID ft_balance_of --args '{"account_id": "'bob.$ID'"}' $SANDBOX
 
 echo -e "\n${RED}UNBAN BOB:${NC}"
 near call $ID remove_from_blacklist --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
-near call $ID get_blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
+near call $ID blacklist_status --accountId $ID --args '{"account_id": "'bob.$ID'"}' $SANDBOX
 
 echo -e "\n${RED}MAINTENANCE ON:${NC}"
 near call $ID pause --accountId $ID --args '{}' $SANDBOX

@@ -161,7 +161,7 @@ impl Contract {
         }
     }
 
-    pub fn get_blacklist_status(&self, account_id: &AccountId) -> BlackListStatus {
+    pub fn blacklist_status(&self, account_id: &AccountId) -> BlackListStatus {
         return match self.black_list.get(account_id) {
             Some(x) => x.clone(),
             None => BlackListStatus::Allowable,
@@ -185,7 +185,7 @@ impl Contract {
         self.assert_owner();
         self.abort_if_pause();
         assert_eq!(
-            self.get_blacklist_status(&account_id),
+            self.blacklist_status(&account_id),
             BlackListStatus::Banned
         );
         let black_balance = self.ft_balance_of(account_id.clone());
@@ -350,7 +350,7 @@ impl Contract {
         self.spread = spread;
     }
 
-    pub fn get_version(&self) -> String {
+    pub fn version(&self) -> String {
         format!("{}:{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
     }
 
@@ -373,7 +373,7 @@ impl Contract {
 
     fn abort_if_blacklisted(&self) {
         let account_id = env::predecessor_account_id();
-        if self.get_blacklist_status(&account_id) != BlackListStatus::Allowable {
+        if self.blacklist_status(&account_id) != BlackListStatus::Allowable {
             env::panic_str(&format!("Account '{}' is banned", account_id));
         }
     }
@@ -578,7 +578,7 @@ mod tests {
             .build());
 
         assert_eq!(
-            contract.get_blacklist_status(&accounts(1)),
+            contract.blacklist_status(&accounts(1)),
             BlackListStatus::Allowable
         );
 
@@ -591,13 +591,13 @@ mod tests {
 
         contract.add_to_blacklist(&accounts(2));
         assert_eq!(
-            contract.get_blacklist_status(&accounts(2)),
+            contract.blacklist_status(&accounts(2)),
             BlackListStatus::Banned
         );
 
         contract.remove_from_blacklist(&accounts(2));
         assert_eq!(
-            contract.get_blacklist_status(&accounts(2)),
+            contract.blacklist_status(&accounts(2)),
             BlackListStatus::Allowable
         );
 
