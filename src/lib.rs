@@ -140,6 +140,7 @@ impl Contract {
 
     pub fn upgrade_name_symbol(&mut self, name: String, symbol: String) {
         self.assert_owner();
+        self.abort_if_pause();
         let metadata = self.metadata.take();
         if let Some(mut metadata) = metadata {
             metadata.name = name;
@@ -150,6 +151,7 @@ impl Contract {
 
     pub fn upgrade_icon(&mut self, data: String) {
         self.assert_owner();
+        self.abort_if_pause();
         let metadata = self.metadata.take();
         if let Some(mut metadata) = metadata {
             metadata.icon = Some(data);
@@ -158,7 +160,6 @@ impl Contract {
     }
 
     pub fn get_blacklist_status(&self, account_id: &AccountId) -> BlackListStatus {
-        self.abort_if_pause();
         return match self.black_list.get(account_id) {
             Some(x) => x.clone(),
             None => BlackListStatus::Allowable,
@@ -201,7 +202,7 @@ impl Contract {
     #[payable]
     pub fn pause(&mut self) {
         assert_one_yocto();
-        self.assert_owner_or_guardian();
+        self.assert_owner();
         self.status = ContractStatus::Paused;
     }
 
@@ -310,27 +311,23 @@ impl Contract {
     }
 
     pub fn contract_status(&self) -> ContractStatus {
-        self.assert_owner();
         self.status.clone()
     }
 
     /// Returns the name of the token.
     pub fn name(&self) -> String {
-        self.abort_if_pause();
         let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").name
     }
 
     /// Returns the symbol of the token.
     pub fn symbol(&self) -> String {
-        self.abort_if_pause();
         let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").symbol
     }
 
     /// Returns the decimals places of the token.
     pub fn decimals(&self) -> u8 {
-        self.abort_if_pause();
         let metadata = self.metadata.get();
         metadata.expect("Unable to get decimals").decimals
     }
@@ -440,12 +437,10 @@ impl FungibleTokenCore for Contract {
     }
 
     fn ft_total_supply(&self) -> U128 {
-        self.abort_if_pause();
         self.token.ft_total_supply()
     }
 
     fn ft_balance_of(&self, account_id: AccountId) -> U128 {
-        self.abort_if_pause();
         self.token.ft_balance_of(account_id)
     }
 }
@@ -631,10 +626,7 @@ mod tests {
         contract.resume();
         assert_eq!(contract.contract_status(), ContractStatus::Working);
         contract.pause();
-        let result = std::panic::catch_unwind(move || {
-            let _ = contract.ft_total_supply();
-        });
-        assert!(result.is_err());
+        contract.ft_total_supply();
     }
 
     #[test]
