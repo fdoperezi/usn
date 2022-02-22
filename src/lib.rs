@@ -184,10 +184,7 @@ impl Contract {
     pub fn destroy_black_funds(&mut self, account_id: &AccountId) {
         self.assert_owner();
         self.abort_if_pause();
-        assert_eq!(
-            self.blacklist_status(&account_id),
-            BlackListStatus::Banned
-        );
+        assert_eq!(self.blacklist_status(&account_id), BlackListStatus::Banned);
         let black_balance = self.ft_balance_of(account_id.clone());
         if black_balance.0 <= 0 {
             env::panic_str("The account doesn't have enough balance");
@@ -264,7 +261,9 @@ impl Contract {
 
     /// Sells USN tokens getting NEAR tokens.
     /// Return amount of purchased NEAR tokens.
+    #[payable]
     pub fn sell(&mut self, amount: U128) -> PromiseOrValue<Balance> {
+        assert_one_yocto();
         self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
@@ -499,6 +498,8 @@ mod tests {
 
     use super::*;
 
+    const ONE_YOCTO_NEAR: u128 = 1;
+
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
@@ -546,7 +547,7 @@ mod tests {
 
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(1)
+            .attached_deposit(ONE_YOCTO_NEAR)
             .predecessor_account_id(accounts(2))
             .build());
         let transfer_amount = AMOUNT / 3;
@@ -633,7 +634,7 @@ mod tests {
         let mut contract = Contract::new(accounts(1));
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(1)
+            .attached_deposit(ONE_YOCTO_NEAR)
             .predecessor_account_id(accounts(1))
             .current_account_id(accounts(1))
             .signer_account_id(accounts(1))
@@ -720,6 +721,9 @@ mod tests {
             PromiseOrValue::Value(v) => assert_eq!(v, 11032461000000000000),
             _ => panic!("Must return a value"),
         };
+
+        testing_env!(context.attached_deposit(ONE_YOCTO_NEAR).build());
+
         match contract.sell(U128::from(11032461000000000000)) {
             PromiseOrValue::Value(v) => assert!(v < ONE_NEAR && v > (ONE_NEAR * 8 / 10)),
             _ => panic!("Must return a value"),
@@ -733,6 +737,9 @@ mod tests {
             PromiseOrValue::Value(_) => panic!("Must return a promise"),
             _ => {}
         };
+
+        testing_env!(context.attached_deposit(ONE_YOCTO_NEAR).build());
+
         match contract.sell(U128::from(9900000000000000000)) {
             PromiseOrValue::Value(_) => panic!("Must return a promise"),
             _ => {}
@@ -780,7 +787,10 @@ mod tests {
             .build());
         contract.storage_deposit(None, None);
 
-        testing_env!(context.predecessor_account_id(accounts(2)).build());
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(ONE_YOCTO_NEAR)
+            .build());
         contract.sell(U128::from(1));
     }
 
@@ -830,6 +840,7 @@ mod tests {
         testing_env!(context
             .predecessor_account_id(accounts(2))
             .signer_account_id(accounts(2))
+            .attached_deposit(ONE_YOCTO_NEAR)
             .build());
 
         contract.token.internal_deposit(&accounts(2), 1);
