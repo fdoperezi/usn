@@ -63,6 +63,14 @@ impl std::fmt::Display for ContractStatus {
     }
 }
 
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
+#[serde(crate = "near_sdk::serde")]
+pub struct ExpectedRate {
+    pub multiplier: U128,
+    pub decimals: u8,
+    pub slippage: U128,
+}
+
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
@@ -82,10 +90,20 @@ const DATA_IMAGE_SVG_NEAR_ICON: &str =
 #[ext_contract(ext_self)]
 trait ContractCallback {
     #[private]
-    fn buy_with_rate_callback(&self, near: Balance, #[callback] rate: ExchangeRate) -> Balance;
+    fn buy_with_rate_callback(
+        &self,
+        near: Balance,
+        expected: ExpectedRate,
+        #[callback] rate: ExchangeRate,
+    ) -> Balance;
 
     #[private]
-    fn sell_with_rate_callback(&self, tokens: Balance, #[callback] rate: ExchangeRate) -> Balance;
+    fn sell_with_rate_callback(
+        &self,
+        tokens: Balance,
+        expected: ExpectedRate,
+        #[callback] rate: ExchangeRate,
+    ) -> Balance;
 }
 
 #[near_bindgen]
@@ -94,18 +112,20 @@ impl Contract {
     pub fn buy_with_rate_callback(
         &mut self,
         near: Balance,
+        expected: ExpectedRate,
         #[callback] rate: ExchangeRate,
     ) -> Balance {
-        self.finish_buy(near, rate)
+        self.finish_buy(near, expected, rate)
     }
 
     #[private]
     pub fn sell_with_rate_callback(
         &mut self,
         tokens: Balance,
+        expected: ExpectedRate,
         #[callback] rate: ExchangeRate,
     ) -> Balance {
-        self.finish_sell(tokens, rate)
+        self.finish_sell(tokens, expected, rate)
     }
 }
 
@@ -215,7 +235,7 @@ impl Contract {
     /// Can make cross-contract call to an oracle.
     /// Returns amount of purchased USN tokens.
     #[payable]
-    pub fn buy(&mut self) -> PromiseOrValue<Balance> {
+    pub fn buy(&mut self, expected: ExpectedRate) -> PromiseOrValue<Balance> {
         self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
@@ -224,10 +244,13 @@ impl Contract {
         let exchange_rate = self.oracle.get_exchange_rate();
 
         match exchange_rate {
-            PromiseOrValue::Value(rate) => PromiseOrValue::Value(self.finish_buy(near, rate)),
+            PromiseOrValue::Value(rate) => {
+                PromiseOrValue::Value(self.finish_buy(near, expected, rate))
+            }
             PromiseOrValue::Promise(rate) => {
                 PromiseOrValue::Promise(rate.then(ext_self::buy_with_rate_callback(
                     near,
+                    expected,
                     env::current_account_id(),
                     NO_DEPOSIT,
                     GAS_FOR_PROMISE,
@@ -239,7 +262,9 @@ impl Contract {
     /// Completes the purchase (NEAR -> USN). It is called in 2 cases:
     /// 1. Direct call from the `buy` method if the exchange rate cache is valid.
     /// 2. Indirect callback from the cross-contract call after getting a fresh exchange rate.
-    fn finish_buy(&mut self, near: Balance, rate: ExchangeRate) -> Balance {
+    fn finish_buy(&mut self, near: Balance, expected: ExpectedRate, rate: ExchangeRate) -> Balance {
+        Self::assert_exchange_rate(&rate, &expected);
+
         // An account of the original request. In a case of cross-contract call,
         // it's the account of the original `buy` operation.
         let buyer = env::signer_account_id();
@@ -262,7 +287,7 @@ impl Contract {
     /// Sells USN tokens getting NEAR tokens.
     /// Return amount of purchased NEAR tokens.
     #[payable]
-    pub fn sell(&mut self, amount: U128) -> PromiseOrValue<Balance> {
+    pub fn sell(&mut self, amount: U128, expected: ExpectedRate) -> PromiseOrValue<Balance> {
         assert_one_yocto();
         self.assert_owner_or_guardian();
         self.abort_if_pause();
@@ -271,16 +296,19 @@ impl Contract {
         let amount = Balance::from(amount);
 
         if amount == 0 {
-            env::panic_str("Not enough tokens to sell: exchange more than 0 tokens");
+            env::panic_str("Not allowed to sell 0 tokens");
         }
 
         let exchange_rate = self.oracle.get_exchange_rate();
 
         match exchange_rate {
-            PromiseOrValue::Value(rate) => PromiseOrValue::Value(self.finish_sell(amount, rate)),
+            PromiseOrValue::Value(rate) => {
+                PromiseOrValue::Value(self.finish_sell(amount, expected, rate))
+            }
             PromiseOrValue::Promise(rate) => rate
                 .then(ext_self::sell_with_rate_callback(
                     amount,
+                    expected,
                     env::current_account_id(),
                     NO_DEPOSIT,
                     GAS_FOR_PROMISE,
@@ -292,7 +320,14 @@ impl Contract {
     /// Finishes the sell (USN -> NEAR). It is called in 2 cases:
     /// 1. Direct call from the `sell` method if the exchange rate cache is valid.
     /// 2. Indirect callback from the cross-contract call after getting a fresh exchange rate.
-    fn finish_sell(&mut self, amount: Balance, rate: ExchangeRate) -> Balance {
+    fn finish_sell(
+        &mut self,
+        amount: Balance,
+        expected: ExpectedRate,
+        rate: ExchangeRate,
+    ) -> Balance {
+        Self::assert_exchange_rate(&rate, &expected);
+
         // An account of the original request. In a case of cross-contract call,
         // it's the account of the original `sell` operation.
         let seller = env::signer_account_id();
@@ -309,6 +344,22 @@ impl Contract {
         Promise::new(seller).transfer(deposit);
 
         deposit
+    }
+
+    fn assert_exchange_rate(actual: &ExchangeRate, expected: &ExpectedRate) {
+        let slippage = u128::from(expected.slippage);
+        let multiplier = u128::from(expected.multiplier);
+        let start = multiplier - slippage;
+        let end = multiplier + slippage;
+
+        if expected.decimals != actual.decimals() || !(start..end).contains(&actual.multiplier()) {
+            env::panic_str(&format!(
+                "Slippage error: fresh exchange rate {} is out of expected range {} +/- {}",
+                actual.multiplier(),
+                multiplier,
+                slippage
+            ));
+        }
     }
 
     pub fn contract_status(&self) -> ContractStatus {
@@ -500,6 +551,16 @@ mod tests {
 
     const ONE_YOCTO_NEAR: u128 = 1;
 
+    impl From<ExchangeRate> for ExpectedRate {
+        fn from(rate: ExchangeRate) -> Self {
+            Self {
+                multiplier: rate.multiplier().into(),
+                decimals: rate.decimals(),
+                slippage: (rate.multiplier() * 5 / 100).into(), // 5%
+            }
+        }
+    }
+
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
@@ -689,7 +750,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new(accounts(1));
         testing_env!(context.predecessor_account_id(accounts(2)).build());
-        contract.buy();
+        contract.buy(ExchangeRate::test_fresh_rate().into());
     }
 
     #[test]
@@ -713,34 +774,36 @@ mod tests {
             .attached_deposit(ONE_NEAR)
             .build());
 
-        contract
-            .oracle
-            .set_exchange_rate(ExchangeRate::test_fresh_rate());
+        let fresh_rate = ExchangeRate::test_fresh_rate();
+        let old_rate = ExchangeRate::test_old_rate();
 
-        match contract.buy() {
+        contract.oracle.set_exchange_rate(fresh_rate.clone());
+
+        match contract.buy(fresh_rate.into()) {
             PromiseOrValue::Value(v) => assert_eq!(v, 11032461000000000000),
             _ => panic!("Must return a value"),
         };
 
         testing_env!(context.attached_deposit(ONE_YOCTO_NEAR).build());
 
-        match contract.sell(U128::from(11032461000000000000)) {
+        match contract.sell(U128::from(11032461000000000000), old_rate.clone().into()) {
             PromiseOrValue::Value(v) => assert!(v < ONE_NEAR && v > (ONE_NEAR * 8 / 10)),
             _ => panic!("Must return a value"),
         };
 
-        contract
-            .oracle
-            .set_exchange_rate(ExchangeRate::test_old_rate());
+        contract.oracle.set_exchange_rate(old_rate.clone());
 
-        match contract.buy() {
+        match contract.buy(old_rate.clone().into()) {
             PromiseOrValue::Value(_) => panic!("Must return a promise"),
             _ => {}
         };
 
         testing_env!(context.attached_deposit(ONE_YOCTO_NEAR).build());
 
-        match contract.sell(U128::from(9900000000000000000)) {
+        let mut expected_rate: ExpectedRate = old_rate.clone().into();
+        expected_rate.multiplier = (old_rate.multiplier() * 96 / 100).into();
+
+        match contract.sell(U128::from(9900000000000000000), expected_rate) {
             PromiseOrValue::Value(_) => panic!("Must return a promise"),
             _ => {}
         };
@@ -768,7 +831,7 @@ mod tests {
             .predecessor_account_id(accounts(2))
             .attached_deposit(ONE_NEAR)
             .build());
-        contract.buy();
+        contract.buy(ExchangeRate::test_fresh_rate().into());
     }
 
     #[test]
@@ -791,7 +854,7 @@ mod tests {
             .predecessor_account_id(accounts(2))
             .attached_deposit(ONE_YOCTO_NEAR)
             .build());
-        contract.sell(U128::from(1));
+        contract.sell(U128::from(1), ExchangeRate::test_old_rate().into());
     }
 
     #[test]
@@ -819,11 +882,11 @@ mod tests {
         contract
             .oracle
             .set_exchange_rate(ExchangeRate::test_fresh_rate());
-        contract.buy();
+        contract.buy(ExchangeRate::test_fresh_rate().into());
     }
 
     #[test]
-    #[should_panic(expected = "Not enough tokens to sell")]
+    #[should_panic(expected = "Not allowed to sell 0 tokens")]
     fn test_cannot_sell_zero() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
@@ -838,16 +901,47 @@ mod tests {
         contract.storage_deposit(None, None);
 
         testing_env!(context
-            .predecessor_account_id(accounts(2))
             .signer_account_id(accounts(2))
             .attached_deposit(ONE_YOCTO_NEAR)
             .build());
 
+        let fresh_rate = ExchangeRate::test_fresh_rate();
+
         contract.token.internal_deposit(&accounts(2), 1);
-        contract
-            .oracle
-            .set_exchange_rate(ExchangeRate::test_fresh_rate());
-        contract.sell(U128::from(0));
+        contract.oracle.set_exchange_rate(fresh_rate.clone());
+        contract.sell(U128::from(0), fresh_rate.into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Slippage error")]
+    fn test_slippage_error() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+        contract.extend_guardians(vec![accounts(2)]);
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .build());
+        contract.storage_deposit(None, None);
+
+        testing_env!(context
+            .signer_account_id(accounts(2))
+            .attached_deposit(ONE_YOCTO_NEAR)
+            .build());
+
+        let fresh_rate = ExchangeRate::test_fresh_rate();
+
+        contract.token.internal_deposit(&accounts(2), 1);
+        contract.oracle.set_exchange_rate(fresh_rate.clone());
+
+
+        let mut expected_rate: ExpectedRate = fresh_rate.clone().into();
+        expected_rate.multiplier = (fresh_rate.multiplier() * 95 / 100).into();
+
+        contract.sell(U128::from(1), expected_rate);
     }
 
     #[test]
