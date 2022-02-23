@@ -114,7 +114,9 @@ impl Contract {
         expected: ExpectedRate,
         #[callback] price: PriceData,
     ) -> Balance {
-        self.finish_buy(near, expected, price.into())
+        let rate: ExchangeRate = price.into();
+        self.oracle.set_exchange_rate(rate.clone());
+        self.finish_buy(near, expected, rate)
     }
 
     #[private]
@@ -124,7 +126,9 @@ impl Contract {
         expected: ExpectedRate,
         #[callback] price: PriceData,
     ) -> Balance {
-        self.finish_sell(tokens, expected, price.into())
+        let rate: ExchangeRate = price.into();
+        self.oracle.set_exchange_rate(rate.clone());
+        self.finish_sell(tokens, expected, rate)
     }
 }
 
