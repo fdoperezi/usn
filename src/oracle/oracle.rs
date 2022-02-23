@@ -73,32 +73,17 @@ impl Oracle {
         }
 
         // Else, request fresh price data, extracting a pure token price.
-        PromiseOrValue::Promise(
-            ext_priceoracle::get_price_data(
-                vec![CONFIG.asset_id.into()],
-                CONFIG.oracle_address.parse().unwrap(),
-                0,
-                CONFIG.gas,
-            )
-            .then(ext_self::extract_price_callback(
-                env::current_account_id(),
-                0,
-                CONFIG.gas,
-            )),
-        )
+        PromiseOrValue::Promise(ext_priceoracle::get_price_data(
+            vec![CONFIG.asset_id.into()],
+            CONFIG.oracle_address.parse().unwrap(),
+            0,
+            CONFIG.gas,
+        ))
     }
 }
 
-#[ext_contract(ext_self)]
-trait OracleCallback {
-    #[private]
-    fn extract_price_callback(&mut self, #[callback] price_data: PriceData) -> ExchangeRate;
-}
-
-#[near_bindgen]
-impl Contract {
-    #[private]
-    pub fn extract_price_callback(&mut self, #[callback] price_data: PriceData) -> ExchangeRate {
+impl From<PriceData> for ExchangeRate {
+    fn from(price_data: PriceData) -> Self {
         let price = price_data.price(&CONFIG.asset_id.into());
 
         let exchange_rate = ExchangeRate {
@@ -108,7 +93,6 @@ impl Contract {
             recency_duration: price_data.recency_duration(),
         };
 
-        self.oracle.set_exchange_rate(exchange_rate.clone());
         exchange_rate
     }
 }

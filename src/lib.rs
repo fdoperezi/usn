@@ -20,7 +20,7 @@ use near_sdk::{
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
-use oracle::{ExchangeRate, Oracle};
+use oracle::{ExchangeRate, Oracle, PriceData};
 
 const NO_DEPOSIT: Balance = 0;
 const TOKEN_DECIMAL: u8 = 18;
@@ -90,42 +90,42 @@ const DATA_IMAGE_SVG_NEAR_ICON: &str =
 #[ext_contract(ext_self)]
 trait ContractCallback {
     #[private]
-    fn buy_with_rate_callback(
+    fn buy_with_price_callback(
         &self,
         near: Balance,
         expected: ExpectedRate,
-        #[callback] rate: ExchangeRate,
+        #[callback] price: PriceData,
     ) -> Balance;
 
     #[private]
-    fn sell_with_rate_callback(
+    fn sell_with_price_callback(
         &self,
         tokens: Balance,
         expected: ExpectedRate,
-        #[callback] rate: ExchangeRate,
+        #[callback] price: PriceData,
     ) -> Balance;
 }
 
 #[near_bindgen]
 impl Contract {
     #[private]
-    pub fn buy_with_rate_callback(
+    pub fn buy_with_price_callback(
         &mut self,
         near: Balance,
         expected: ExpectedRate,
-        #[callback] rate: ExchangeRate,
+        #[callback] price: PriceData,
     ) -> Balance {
-        self.finish_buy(near, expected, rate)
+        self.finish_buy(near, expected, price.into())
     }
 
     #[private]
-    pub fn sell_with_rate_callback(
+    pub fn sell_with_price_callback(
         &mut self,
         tokens: Balance,
         expected: ExpectedRate,
-        #[callback] rate: ExchangeRate,
+        #[callback] price: PriceData,
     ) -> Balance {
-        self.finish_sell(tokens, expected, rate)
+        self.finish_sell(tokens, expected, price.into())
     }
 }
 
@@ -248,7 +248,7 @@ impl Contract {
                 PromiseOrValue::Value(self.finish_buy(near, expected, rate))
             }
             PromiseOrValue::Promise(rate) => {
-                PromiseOrValue::Promise(rate.then(ext_self::buy_with_rate_callback(
+                PromiseOrValue::Promise(rate.then(ext_self::buy_with_price_callback(
                     near,
                     expected,
                     env::current_account_id(),
@@ -306,7 +306,7 @@ impl Contract {
                 PromiseOrValue::Value(self.finish_sell(amount, expected, rate))
             }
             PromiseOrValue::Promise(rate) => rate
-                .then(ext_self::sell_with_rate_callback(
+                .then(ext_self::sell_with_price_callback(
                     amount,
                     expected,
                     env::current_account_id(),
@@ -936,7 +936,6 @@ mod tests {
 
         contract.token.internal_deposit(&accounts(2), 1);
         contract.oracle.set_exchange_rate(fresh_rate.clone());
-
 
         let mut expected_rate: ExpectedRate = fresh_rate.clone().into();
         expected_rate.multiplier = (fresh_rate.multiplier() * 95 / 100).into();
