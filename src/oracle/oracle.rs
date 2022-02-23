@@ -86,6 +86,10 @@ impl From<PriceData> for ExchangeRate {
     fn from(price_data: PriceData) -> Self {
         let price = price_data.price(&CONFIG.asset_id.into());
 
+        if env::block_timestamp() >= price_data.timestamp() + price_data.recency_duration() {
+            env::panic_str("Oracle provided an outdated price data");
+        }
+
         let exchange_rate = ExchangeRate {
             multiplier: price.multiplier.into(),
             decimals: price.decimals,
