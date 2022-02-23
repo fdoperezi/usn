@@ -67,7 +67,6 @@ impl std::fmt::Display for ContractStatus {
 #[serde(crate = "near_sdk::serde")]
 pub struct ExpectedRate {
     pub multiplier: U128,
-    pub decimals: u8,
     pub slippage: U128,
 }
 
@@ -352,7 +351,7 @@ impl Contract {
         let start = multiplier - slippage;
         let end = multiplier + slippage;
 
-        if expected.decimals != actual.decimals() || !(start..end).contains(&actual.multiplier()) {
+        if !(start..end).contains(&actual.multiplier()) {
             env::panic_str(&format!(
                 "Slippage error: fresh exchange rate {} is out of expected range {} +/- {}",
                 actual.multiplier(),
@@ -555,7 +554,6 @@ mod tests {
         fn from(rate: ExchangeRate) -> Self {
             Self {
                 multiplier: rate.multiplier().into(),
-                decimals: rate.decimals(),
                 slippage: (rate.multiplier() * 5 / 100).into(), // 5%
             }
         }
