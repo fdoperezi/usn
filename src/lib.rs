@@ -135,7 +135,7 @@ impl Contract {
     pub fn new(owner_id: AccountId) -> Self {
         let metadata = FungibleTokenMetadata {
             spec: FT_METADATA_SPEC.to_string(),
-            name: "USD Near".to_string(),
+            name: "USN".to_string(),
             symbol: "USN".to_string(),
             icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
             reference: None,
