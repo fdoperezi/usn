@@ -1,0 +1,20 @@
+@startuml
+
+title Sell USN
+
+Alice -> usn: USN amount\n+ expected rate\n+ slippage
+usn -> usn: check price cache
+
+alt Cache is invalidated
+usn -> priceoracle: ""get_price_data""
+activate priceoracle
+usn <- priceoracle: NEARUSDT
+deactivate priceoracle
+usn -> usn: verify timestamp
+usn -> usn: update cache
+end
+
+usn -> usn: assert slippage
+usn -> usn: burn USN
+Alice <-- usn: send NEAR
+@enduml
