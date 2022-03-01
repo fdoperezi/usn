@@ -115,7 +115,10 @@ impl Contract {
         #[callback] price: PriceData,
     ) -> Balance {
         let rate: ExchangeRate = price.into();
-        self.oracle.set_exchange_rate(rate.clone());
+
+        // Price cache is disabled, but it can be enabled like this:
+        //     self.oracle.set_exchange_rate(rate.clone());
+
         self.finish_buy(near, expected, rate)
     }
 
@@ -127,7 +130,10 @@ impl Contract {
         #[callback] price: PriceData,
     ) -> Balance {
         let rate: ExchangeRate = price.into();
-        self.oracle.set_exchange_rate(rate.clone());
+
+        // Price cache is disabled, but it can be enabled like this:
+        //     self.oracle.set_exchange_rate(rate.clone());
+
         self.finish_sell(tokens, expected, rate)
     }
 }
