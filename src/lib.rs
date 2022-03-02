@@ -91,6 +91,7 @@ trait ContractCallback {
     #[private]
     fn buy_with_price_callback(
         &self,
+        account: AccountId,
         near: Balance,
         expected: ExpectedRate,
         #[callback] price: PriceData,
@@ -99,6 +100,7 @@ trait ContractCallback {
     #[private]
     fn sell_with_price_callback(
         &self,
+        account: AccountId,
         tokens: Balance,
         expected: ExpectedRate,
         #[callback] price: PriceData,
@@ -110,6 +112,7 @@ impl Contract {
     #[private]
     pub fn buy_with_price_callback(
         &mut self,
+        account: AccountId,
         near: Balance,
         expected: ExpectedRate,
         #[callback] price: PriceData,
@@ -119,12 +122,13 @@ impl Contract {
         // Price cache is disabled, but it can be enabled like this:
         //     self.oracle.set_exchange_rate(rate.clone());
 
-        self.finish_buy(near, expected, rate)
+        self.finish_buy(account, near, expected, rate)
     }
 
     #[private]
     pub fn sell_with_price_callback(
         &mut self,
+        account: AccountId,
         tokens: Balance,
         expected: ExpectedRate,
         #[callback] price: PriceData,
@@ -134,7 +138,7 @@ impl Contract {
         // Price cache is disabled, but it can be enabled like this:
         //     self.oracle.set_exchange_rate(rate.clone());
 
-        self.finish_sell(tokens, expected, rate)
+        self.finish_sell(account, tokens, expected, rate)
     }
 }
 
@@ -249,15 +253,17 @@ impl Contract {
         self.abort_if_pause();
         self.abort_if_blacklisted();
 
+        let account = env::predecessor_account_id();
         let near = env::attached_deposit();
         let exchange_rate = self.oracle.get_exchange_rate();
 
         match exchange_rate {
             PromiseOrValue::Value(rate) => {
-                PromiseOrValue::Value(self.finish_buy(near, expected, rate))
+                PromiseOrValue::Value(self.finish_buy(account, near, expected, rate))
             }
             PromiseOrValue::Promise(rate) => {
                 PromiseOrValue::Promise(rate.then(ext_self::buy_with_price_callback(
+                    account,
                     near,
                     expected,
                     env::current_account_id(),
@@ -271,12 +277,14 @@ impl Contract {
     /// Completes the purchase (NEAR -> USN). It is called in 2 cases:
     /// 1. Direct call from the `buy` method if the exchange rate cache is valid.
     /// 2. Indirect callback from the cross-contract call after getting a fresh exchange rate.
-    fn finish_buy(&mut self, near: Balance, expected: ExpectedRate, rate: ExchangeRate) -> Balance {
+    fn finish_buy(
+        &mut self,
+        account: AccountId,
+        near: Balance,
+        expected: ExpectedRate,
+        rate: ExchangeRate,
+    ) -> Balance {
         Self::assert_exchange_rate(&rate, &expected);
-
-        // An account of the original request. In a case of cross-contract call,
-        // it's the account of the original `buy` operation.
-        let buyer = env::signer_account_id();
 
         let spread = 10u128.pow(SPREAD_DECIMAL as u32) - self.spread; // 1 - 0.01
         let amount = near * rate.multiplier() * spread
@@ -286,9 +294,9 @@ impl Contract {
             env::panic_str("Not enough NEAR: attached deposit exchanges to 0 tokens");
         }
 
-        self.token.internal_deposit(&buyer, amount);
+        self.token.internal_deposit(&account, amount);
 
-        event::emit::ft_mint(&buyer, amount, None);
+        event::emit::ft_mint(&account, amount, None);
 
         amount
     }
@@ -308,14 +316,16 @@ impl Contract {
             env::panic_str("Not allowed to sell 0 tokens");
         }
 
+        let account = env::predecessor_account_id();
         let exchange_rate = self.oracle.get_exchange_rate();
 
         match exchange_rate {
             PromiseOrValue::Value(rate) => {
-                PromiseOrValue::Value(self.finish_sell(amount, expected, rate))
+                PromiseOrValue::Value(self.finish_sell(account, amount, expected, rate))
             }
             PromiseOrValue::Promise(rate) => rate
                 .then(ext_self::sell_with_price_callback(
+                    account,
                     amount,
                     expected,
                     env::current_account_id(),
@@ -331,26 +341,23 @@ impl Contract {
     /// 2. Indirect callback from the cross-contract call after getting a fresh exchange rate.
     fn finish_sell(
         &mut self,
+        account: AccountId,
         amount: Balance,
         expected: ExpectedRate,
         rate: ExchangeRate,
     ) -> Balance {
         Self::assert_exchange_rate(&rate, &expected);
 
-        // An account of the original request. In a case of cross-contract call,
-        // it's the account of the original `sell` operation.
-        let seller = env::signer_account_id();
-
         let spread = 10u128.pow(SPREAD_DECIMAL as u32) + self.spread; // 1 + 0.01
         let deposit = amount
             * 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL))
             / (rate.multiplier() * spread);
 
-        self.token.internal_withdraw(&seller, amount);
+        self.token.internal_withdraw(&account, amount);
 
-        event::emit::ft_burn(&seller, amount, None);
+        event::emit::ft_burn(&account, amount, None);
 
-        Promise::new(seller).transfer(deposit);
+        Promise::new(account).transfer(deposit);
 
         deposit
     }
