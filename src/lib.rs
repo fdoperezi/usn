@@ -16,6 +16,7 @@ use near_sdk::{
     assert_one_yocto, env, ext_contract, is_promise_success, log, near_bindgen, sys, AccountId,
     Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
 };
+use primitive_types::U256;
 
 use std::convert::TryFrom;
 use std::fmt::Debug;
@@ -296,9 +297,17 @@ impl Contract {
     ) -> Balance {
         Self::assert_exchange_rate(&rate, &expected);
 
-        let spread = 10u128.pow(SPREAD_DECIMAL as u32) - self.spread; // 1 - 0.01
-        let amount = near * rate.multiplier() * spread
+        let spread = U256::from(10u128.pow(SPREAD_DECIMAL as u32) - self.spread); // 1 - 0.01
+        let near = U256::from(near);
+        let multiplier = U256::from(rate.multiplier());
+
+        // Make exchange: NEAR -> USN.
+        let amount = near * multiplier * spread
             / 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL));
+
+        // Expected result (128-bit) can have 20 digits before and 18 after the decimal point.
+        // It panics if overflows. We don't expect more than 10^20 tokens on a single account.
+        let amount = amount.as_u128();
 
         if amount == 0 {
             env::panic_str("Not enough NEAR: attached deposit exchanges to 0 tokens");
@@ -359,9 +368,14 @@ impl Contract {
         Self::assert_exchange_rate(&rate, &expected);
 
         let spread = 10u128.pow(SPREAD_DECIMAL as u32) + self.spread; // 1 + 0.01
-        let deposit = amount
-            * 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL))
+
+        // Make exchange: USN -> NEAR.
+        let deposit = U256::from(amount)
+            * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL)))
             / (rate.multiplier() * spread);
+
+        // Here we say we don't expect too big deposit. Otherwise, panic.
+        let deposit = deposit.as_u128();
 
         self.token.internal_withdraw(&account, amount);
 
@@ -578,11 +592,9 @@ impl FungibleTokenMetadataProvider for Contract {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, Balance};
+    use near_sdk::{testing_env, Balance, ONE_NEAR, ONE_YOCTO};
 
     use super::*;
-
-    const ONE_YOCTO_NEAR: u128 = 1;
 
     impl From<ExchangeRate> for ExpectedRate {
         fn from(rate: ExchangeRate) -> Self {
@@ -640,7 +652,7 @@ mod tests {
 
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(ONE_YOCTO_NEAR)
+            .attached_deposit(ONE_YOCTO)
             .predecessor_account_id(accounts(2))
             .build());
         let transfer_amount = AMOUNT / 3;
@@ -727,7 +739,7 @@ mod tests {
         let mut contract = Contract::new(accounts(1));
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(ONE_YOCTO_NEAR)
+            .attached_deposit(ONE_YOCTO)
             .predecessor_account_id(accounts(1))
             .current_account_id(accounts(1))
             .signer_account_id(accounts(1))
@@ -799,8 +811,6 @@ mod tests {
             .build());
         contract.storage_deposit(None, None);
 
-        const ONE_NEAR: Balance = 1_000_000_000_000_000_000_000_000;
-
         testing_env!(context
             .predecessor_account_id(accounts(2))
             .attached_deposit(ONE_NEAR)
@@ -816,7 +826,7 @@ mod tests {
             _ => panic!("Must return a value"),
         };
 
-        testing_env!(context.attached_deposit(ONE_YOCTO_NEAR).build());
+        testing_env!(context.attached_deposit(ONE_YOCTO).build());
 
         match contract.sell(U128::from(11032461000000000000), old_rate.clone().into()) {
             PromiseOrValue::Value(v) => assert!(v < ONE_NEAR && v > (ONE_NEAR * 8 / 10)),
@@ -830,7 +840,7 @@ mod tests {
             _ => {}
         };
 
-        testing_env!(context.attached_deposit(ONE_YOCTO_NEAR).build());
+        testing_env!(context.attached_deposit(ONE_YOCTO).build());
 
         let mut expected_rate: ExpectedRate = old_rate.clone().into();
         expected_rate.multiplier = (old_rate.multiplier() * 96 / 100).into();
@@ -857,8 +867,6 @@ mod tests {
             .build());
         contract.storage_deposit(None, None);
 
-        const ONE_NEAR: Balance = 1_000_000_000_000_000_000_000_000;
-
         testing_env!(context
             .predecessor_account_id(accounts(2))
             .attached_deposit(ONE_NEAR)
@@ -884,7 +892,7 @@ mod tests {
 
         testing_env!(context
             .predecessor_account_id(accounts(2))
-            .attached_deposit(ONE_YOCTO_NEAR)
+            .attached_deposit(ONE_YOCTO)
             .build());
         contract.sell(U128::from(1), ExchangeRate::test_old_rate().into());
     }
@@ -934,7 +942,7 @@ mod tests {
 
         testing_env!(context
             .signer_account_id(accounts(2))
-            .attached_deposit(ONE_YOCTO_NEAR)
+            .attached_deposit(ONE_YOCTO)
             .build());
 
         let fresh_rate = ExchangeRate::test_fresh_rate();
@@ -961,7 +969,7 @@ mod tests {
 
         testing_env!(context
             .signer_account_id(accounts(2))
-            .attached_deposit(ONE_YOCTO_NEAR)
+            .attached_deposit(ONE_YOCTO)
             .build());
 
         let fresh_rate = ExchangeRate::test_fresh_rate();
@@ -985,5 +993,71 @@ mod tests {
         assert_eq!(contract.spread(), MAX_SPREAD);
         let res = std::panic::catch_unwind(move || contract.set_spread(MAX_SPREAD + 1));
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_u256() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .build());
+        contract.storage_deposit(None, None);
+
+        let fresh_rate = ExchangeRate::test_fresh_rate();
+        let expected_rate: ExpectedRate = fresh_rate.clone().into();
+
+        assert_eq!(
+            contract.finish_buy(
+                accounts(2),
+                1_000_000_000_000 * ONE_NEAR,
+                expected_rate.clone(),
+                fresh_rate.clone(),
+            ),
+            11032461000000_000000000000000000
+        );
+
+        testing_env!(context
+            .account_balance(1_000_000_000_000 * ONE_NEAR)
+            .build());
+
+        assert_eq!(
+            contract.finish_sell(
+                accounts(2),
+                11032461000000_000000000000000000,
+                expected_rate,
+                fresh_rate,
+            ),
+            980_198_019_801_980198019801980198019801
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "The account doesn't have enough balance")]
+    fn test_not_enough_deposit() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(contract.storage_balance_bounds().min.into())
+            .build());
+        contract.storage_deposit(None, None);
+
+        let fresh_rate = ExchangeRate::test_fresh_rate();
+        let expected_rate: ExpectedRate = fresh_rate.clone().into();
+
+        contract.finish_sell(
+            accounts(2),
+            11032461000000_000000000000000000,
+            expected_rate,
+            fresh_rate,
+        );
     }
 }

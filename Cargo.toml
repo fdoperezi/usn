@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 near-contract-standards = "4.0.0-pre.4"
 near-sdk = {version = "4.0.0-pre.4", features = ["unstable"]}
+primitive-types = "0.11"
 
 [profile.release]
 codegen-units = 1
