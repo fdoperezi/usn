@@ -16,16 +16,21 @@ use near_sdk::{
     assert_one_yocto, env, ext_contract, is_promise_success, log, near_bindgen, sys, AccountId,
     Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
 };
-use primitive_types::U256;
 
-use std::convert::TryFrom;
 use std::fmt::Debug;
 
 use oracle::{ExchangeRate, Oracle, PriceData};
 
+uint::construct_uint!(
+    pub struct U256(4);
+);
+
 const NO_DEPOSIT: Balance = 0;
 const TOKEN_DECIMAL: u8 = 18;
-const GAS_FOR_PROMISE: Gas = Gas(5_000_000_000_000);
+const GAS_FOR_REFUND_PROMISE: Gas = Gas(5_000_000_000_000);
+const GAS_FOR_BUY_PROMISE: Gas = Gas(10_000_000_000_000);
+const GAS_FOR_SELL_PROMISE: Gas = Gas(15_000_000_000_000);
+const GAS_FOR_RETURN_VALUE_PROMISE: Gas = Gas(5_000_000_000_000);
 
 const DEFAULT_SPREAD: Balance = 10_000; // 0.01 (10^4 / 10^6) = 1%
 const MAX_SPREAD: Balance = 50_000; // 0.05 = 5%
@@ -64,11 +69,12 @@ impl std::fmt::Display for ContractStatus {
     }
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(crate = "near_sdk::serde")]
 pub struct ExpectedRate {
     pub multiplier: U128,
     pub slippage: U128,
+    pub decimals: u8,
 }
 
 #[near_bindgen]
@@ -91,58 +97,102 @@ const DATA_IMAGE_SVG_NEAR_ICON: &str =
 trait ContractCallback {
     #[private]
     fn buy_with_price_callback(
-        &self,
+        &mut self,
         account: AccountId,
-        near: Balance,
+        near: U128,
         expected: ExpectedRate,
         #[callback] price: PriceData,
-    ) -> Balance;
+    ) -> U128;
 
     #[private]
     fn sell_with_price_callback(
-        &self,
+        &mut self,
         account: AccountId,
-        tokens: Balance,
+        tokens: U128,
         expected: ExpectedRate,
         #[callback] price: PriceData,
-    ) -> Balance;
+    ) -> Promise;
 
     #[private]
-    fn handle_refund(&self, account: AccountId, attached_deposit: Balance);
+    fn handle_refund(&mut self, account: AccountId, attached_deposit: U128);
+
+    #[private]
+    fn return_value(&mut self, value: U128) -> U128;
+}
+
+trait ContractCallback {
+    fn buy_with_price_callback(
+        &mut self,
+        account: AccountId,
+        near: U128,
+        expected: ExpectedRate,
+        price: PriceData,
+    ) -> U128;
+
+    fn sell_with_price_callback(
+        &mut self,
+        account: AccountId,
+        tokens: U128,
+        expected: ExpectedRate,
+        price: PriceData,
+    ) -> Promise;
+
+    fn handle_refund(&mut self, account: AccountId, attached_deposit: U128);
+
+    fn return_value(&mut self, value: U128) -> U128;
 }
 
 #[near_bindgen]
-impl Contract {
+impl ContractCallback for Contract {
     #[private]
-    pub fn buy_with_price_callback(
+    fn buy_with_price_callback(
         &mut self,
         account: AccountId,
-        near: Balance,
+        near: U128,
         expected: ExpectedRate,
         #[callback] price: PriceData,
-    ) -> Balance {
+    ) -> U128 {
         let rate: ExchangeRate = price.into();
 
-        // Price cache is disabled, but it can be enabled like this:
-        //     self.oracle.set_exchange_rate(rate.clone());
-
-        self.finish_buy(account, near, expected, rate)
+        self.finish_buy(account, near.0, expected, rate).into()
     }
 
     #[private]
-    pub fn sell_with_price_callback(
+    fn sell_with_price_callback(
         &mut self,
         account: AccountId,
-        tokens: Balance,
+        tokens: U128,
         expected: ExpectedRate,
         #[callback] price: PriceData,
-    ) -> Balance {
+    ) -> Promise {
         let rate: ExchangeRate = price.into();
 
-        // Price cache is disabled, but it can be enabled like this:
-        //     self.oracle.set_exchange_rate(rate.clone());
+        let deposit = self.finish_sell(account.clone(), tokens.0, expected, rate);
 
-        self.finish_sell(account, tokens, expected, rate)
+        Promise::new(account)
+            .transfer(deposit)
+            .then(ext_self::return_value(
+                deposit.into(),
+                env::current_account_id(),
+                0,
+                GAS_FOR_RETURN_VALUE_PROMISE,
+            ))
+    }
+
+    #[private]
+    fn handle_refund(&mut self, account: AccountId, attached_deposit: U128) {
+        if !is_promise_success() {
+            Promise::new(account)
+                .transfer(attached_deposit.0)
+                .as_return();
+        }
+    }
+
+    #[private]
+    fn return_value(&mut self, value: U128) -> U128 {
+        assert!(is_promise_success(), "Transfer has failed");
+        // TODO: Remember lost value? Unlikely to happen, and only by user error.
+        value
     }
 }
 
@@ -238,7 +288,8 @@ impl Contract {
     #[payable]
     pub fn pause(&mut self) {
         assert_one_yocto();
-        self.assert_owner();
+        // TODO: Should guardians be able to pause?
+        self.assert_owner_or_guardian();
         self.status = ContractStatus::Paused;
     }
 
@@ -251,38 +302,38 @@ impl Contract {
     /// Buys USN tokens for NEAR tokens.
     /// Can make cross-contract call to an oracle.
     /// Returns amount of purchased USN tokens.
+    /// NOTE: The method returns a promise, but SDK doesn't support clone on promise and we
+    ///     want to return a promise in the middle.
     #[payable]
-    pub fn buy(&mut self, expected: ExpectedRate) -> PromiseOrValue<Balance> {
+    pub fn buy(&mut self, expected: ExpectedRate) {
+        // TODO: Should regular people be able to buy?
         self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
 
         let account = env::predecessor_account_id();
         let near = env::attached_deposit();
-        let exchange_rate = self.oracle.get_exchange_rate();
 
-        match exchange_rate {
-            PromiseOrValue::Value(rate) => {
-                PromiseOrValue::Value(self.finish_buy(account, near, expected, rate))
-            }
-            PromiseOrValue::Promise(rate) => PromiseOrValue::Promise(
-                rate.then(ext_self::buy_with_price_callback(
-                    account.clone(),
-                    near,
-                    expected,
-                    env::current_account_id(),
-                    NO_DEPOSIT,
-                    GAS_FOR_PROMISE,
-                ))
-                .then(ext_self::handle_refund(
-                    account,
-                    near,
-                    env::current_account_id(),
-                    NO_DEPOSIT,
-                    GAS_FOR_PROMISE,
-                )),
-            ),
-        }
+        self.oracle
+            .get_exchange_rate_promise()
+            .then(ext_self::buy_with_price_callback(
+                account.clone(),
+                near.into(),
+                expected,
+                env::current_account_id(),
+                NO_DEPOSIT,
+                GAS_FOR_BUY_PROMISE,
+            ))
+            // Returning callback promise, so the transaction will return the value or a failure.
+            // But the refund will still happen.
+            .as_return()
+            .then(ext_self::handle_refund(
+                account,
+                near.into(),
+                env::current_account_id(),
+                NO_DEPOSIT,
+                GAS_FOR_REFUND_PROMISE,
+            ));
     }
 
     /// Completes the purchase (NEAR -> USN). It is called in 2 cases:
@@ -323,8 +374,9 @@ impl Contract {
     /// Sells USN tokens getting NEAR tokens.
     /// Return amount of purchased NEAR tokens.
     #[payable]
-    pub fn sell(&mut self, amount: U128, expected: ExpectedRate) -> PromiseOrValue<Balance> {
+    pub fn sell(&mut self, amount: U128, expected: ExpectedRate) -> Promise {
         assert_one_yocto();
+        // TODO: Ditto
         self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
@@ -336,23 +388,16 @@ impl Contract {
         }
 
         let account = env::predecessor_account_id();
-        let exchange_rate = self.oracle.get_exchange_rate();
-
-        match exchange_rate {
-            PromiseOrValue::Value(rate) => {
-                PromiseOrValue::Value(self.finish_sell(account, amount, expected, rate))
-            }
-            PromiseOrValue::Promise(rate) => rate
-                .then(ext_self::sell_with_price_callback(
-                    account,
-                    amount,
-                    expected,
-                    env::current_account_id(),
-                    NO_DEPOSIT,
-                    GAS_FOR_PROMISE,
-                ))
-                .into(),
-        }
+        self.oracle
+            .get_exchange_rate_promise()
+            .then(ext_self::sell_with_price_callback(
+                account,
+                amount.into(),
+                expected,
+                env::current_account_id(),
+                NO_DEPOSIT,
+                GAS_FOR_SELL_PROMISE,
+            ))
     }
 
     /// Finishes the sell (USN -> NEAR). It is called in 2 cases:
@@ -381,25 +426,21 @@ impl Contract {
 
         event::emit::ft_burn(&account, amount, None);
 
-        Promise::new(account).transfer(deposit);
-
         deposit
-    }
-
-    #[private]
-    pub fn handle_refund(&self, account: AccountId, attached_deposit: Balance) {
-        if !is_promise_success() {
-            Promise::new(account).transfer(attached_deposit).as_return();
-        }
     }
 
     fn assert_exchange_rate(actual: &ExchangeRate, expected: &ExpectedRate) {
         let slippage = u128::from(expected.slippage);
         let multiplier = u128::from(expected.multiplier);
-        let start = multiplier - slippage;
-        let end = multiplier + slippage;
+        let start = multiplier.saturating_sub(slippage);
+        let end = multiplier.saturating_add(slippage);
+        assert_eq!(
+            actual.decimals(),
+            expected.decimals,
+            "Slippage error: different decimals"
+        );
 
-        if !(start..end).contains(&actual.multiplier()) {
+        if !(start..=end).contains(&actual.multiplier()) {
             env::panic_str(&format!(
                 "Slippage error: fresh exchange rate {} is out of expected range {} +/- {}",
                 actual.multiplier(),
@@ -528,10 +569,7 @@ impl FungibleTokenCore for Contract {
     fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>) {
         self.abort_if_pause();
         self.abort_if_blacklisted();
-        let sender_id = AccountId::try_from(env::signer_account_id())
-            .expect("Couldn't validate sender address");
-        assert!(u128::from(self.ft_balance_of(sender_id)) >= u128::from(amount));
-        self.token.ft_transfer(receiver_id.clone(), amount, memo);
+        self.token.ft_transfer(receiver_id, amount, memo);
     }
 
     #[payable]
@@ -544,11 +582,7 @@ impl FungibleTokenCore for Contract {
     ) -> PromiseOrValue<U128> {
         self.abort_if_pause();
         self.abort_if_blacklisted();
-        let sender_id = AccountId::try_from(env::signer_account_id())
-            .expect("Couldn't validate sender address");
-        assert!(u128::from(self.ft_balance_of(sender_id)) >= u128::from(amount));
-        self.token
-            .ft_transfer_call(receiver_id.clone(), amount, memo, msg)
+        self.token.ft_transfer_call(receiver_id, amount, memo, msg)
     }
 
     fn ft_total_supply(&self) -> U128 {
@@ -601,6 +635,7 @@ mod tests {
             Self {
                 multiplier: rate.multiplier().into(),
                 slippage: (rate.multiplier() * 5 / 100).into(), // 5%
+                decimals: rate.decimals(),
             }
         }
     }

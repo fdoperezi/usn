@@ -60,25 +60,17 @@ impl Default for Oracle {
 }
 
 impl Oracle {
-    pub fn set_exchange_rate(&mut self, exchange_rate: ExchangeRate) {
-        self.last_report = Some(exchange_rate);
-    }
+    // pub fn set_exchange_rate(&mut self, exchange_rate: ExchangeRate) {
+    //     self.last_report = Some(exchange_rate);
+    // }
 
-    pub fn get_exchange_rate(&self) -> PromiseOrValue<ExchangeRate> {
-        // Re-use the cached price (exchange rate) of the token while it's valid.
-        if let Some(price) = &self.last_report {
-            if env::block_timestamp() < price.timestamp + price.recency_duration {
-                return PromiseOrValue::Value(price.clone());
-            }
-        }
-
-        // Else, request fresh price data, extracting a pure token price.
-        PromiseOrValue::Promise(ext_priceoracle::get_price_data(
+    pub fn get_exchange_rate_promise(&self) -> Promise {
+        ext_priceoracle::get_price_data(
             vec![CONFIG.asset_id.into()],
             CONFIG.oracle_address.parse().unwrap(),
             0,
             CONFIG.gas,
-        ))
+        )
     }
 }
 

@@ -8,9 +8,9 @@ version = "0.1.3"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-near-contract-standards = "4.0.0-pre.4"
-near-sdk = {version = "4.0.0-pre.4", features = ["unstable"]}
-primitive-types = "0.11"
+near-contract-standards = "=4.0.0-pre.7"
+near-sdk = { version = "=4.0.0-pre.7", features = ["unstable"] }
+uint = { version = "=0.9.0", default-features = false }
 
 [profile.release]
 codegen-units = 1

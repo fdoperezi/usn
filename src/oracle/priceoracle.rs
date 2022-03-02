@@ -46,8 +46,7 @@ impl PriceData {
         let asset_error = format!("Oracle has NOT provided an exchange rate for {}", asset);
         self.prices
             .iter()
-            .filter(|aop| &aop.asset_id == asset)
-            .last()
+            .find(|aop| &aop.asset_id == asset)
             .expect(&asset_error)
             .price
             .expect(&asset_error)
