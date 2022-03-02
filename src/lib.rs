@@ -13,8 +13,8 @@ use near_sdk::collections::{LazyOption, LookupMap, UnorderedSet};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    assert_one_yocto, env, ext_contract, log, near_bindgen, sys, AccountId, Balance,
-    BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
+    assert_one_yocto, env, ext_contract, is_promise_success, log, near_bindgen, sys, AccountId,
+    Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
 };
 
 use std::convert::TryFrom;
@@ -105,6 +105,9 @@ trait ContractCallback {
         expected: ExpectedRate,
         #[callback] price: PriceData,
     ) -> Balance;
+
+    #[private]
+    fn handle_refund(&self, account: AccountId, attached_deposit: Balance);
 }
 
 #[near_bindgen]
@@ -261,16 +264,23 @@ impl Contract {
             PromiseOrValue::Value(rate) => {
                 PromiseOrValue::Value(self.finish_buy(account, near, expected, rate))
             }
-            PromiseOrValue::Promise(rate) => {
-                PromiseOrValue::Promise(rate.then(ext_self::buy_with_price_callback(
-                    account,
+            PromiseOrValue::Promise(rate) => PromiseOrValue::Promise(
+                rate.then(ext_self::buy_with_price_callback(
+                    account.clone(),
                     near,
                     expected,
                     env::current_account_id(),
                     NO_DEPOSIT,
                     GAS_FOR_PROMISE,
-                )))
-            }
+                ))
+                .then(ext_self::handle_refund(
+                    account,
+                    near,
+                    env::current_account_id(),
+                    NO_DEPOSIT,
+                    GAS_FOR_PROMISE,
+                )),
+            ),
         }
     }
 
@@ -360,6 +370,13 @@ impl Contract {
         Promise::new(account).transfer(deposit);
 
         deposit
+    }
+
+    #[private]
+    pub fn handle_refund(&self, account: AccountId, attached_deposit: Balance) {
+        if !is_promise_success() {
+            Promise::new(account).transfer(attached_deposit).as_return();
+        }
     }
 
     fn assert_exchange_rate(actual: &ExchangeRate, expected: &ExpectedRate) {
