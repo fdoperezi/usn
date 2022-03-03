@@ -499,7 +499,19 @@ impl Contract {
     #[init(ignore_state)]
     #[private]
     pub fn migrate() -> Self {
-        let this: Contract = env::state_read().expect("Contract is not initialized");
+        let mut this: Contract = env::state_read().expect("Contract is not initialized");
+
+        let metadata = FungibleTokenMetadata {
+            spec: FT_METADATA_SPEC.to_string(),
+            name: "USN".to_string(),
+            symbol: "USN".to_string(),
+            icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
+            reference: None,
+            reference_hash: None,
+            decimals: TOKEN_DECIMAL,
+        };
+
+        this.metadata.set(&metadata);
         this
     }
 
