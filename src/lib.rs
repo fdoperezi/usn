@@ -854,36 +854,19 @@ mod tests {
         let fresh_rate = ExchangeRate::test_fresh_rate();
         let old_rate = ExchangeRate::test_old_rate();
 
-        contract.oracle.set_exchange_rate(fresh_rate.clone());
-
-        match contract.buy(fresh_rate.into()) {
-            PromiseOrValue::Value(v) => assert_eq!(v, 11032461000000000000),
-            _ => panic!("Must return a value"),
-        };
+        contract.buy(fresh_rate.into());
 
         testing_env!(context.attached_deposit(ONE_YOCTO).build());
 
-        match contract.sell(U128::from(11032461000000000000), old_rate.clone().into()) {
-            PromiseOrValue::Value(v) => assert!(v < ONE_NEAR && v > (ONE_NEAR * 8 / 10)),
-            _ => panic!("Must return a value"),
-        };
-
-        contract.oracle.set_exchange_rate(old_rate.clone());
-
-        match contract.buy(old_rate.clone().into()) {
-            PromiseOrValue::Value(_) => panic!("Must return a promise"),
-            _ => {}
-        };
+        contract.sell(U128::from(11032461000000000000), old_rate.clone().into());
+        contract.buy(old_rate.clone().into());
 
         testing_env!(context.attached_deposit(ONE_YOCTO).build());
 
         let mut expected_rate: ExpectedRate = old_rate.clone().into();
         expected_rate.multiplier = (old_rate.multiplier() * 96 / 100).into();
 
-        match contract.sell(U128::from(9900000000000000000), expected_rate) {
-            PromiseOrValue::Value(_) => panic!("Must return a promise"),
-            _ => {}
-        };
+        contract.sell(U128::from(9900000000000000000), expected_rate);
     }
 
     #[test]
@@ -930,92 +913,6 @@ mod tests {
             .attached_deposit(ONE_YOCTO)
             .build());
         contract.sell(U128::from(1), ExchangeRate::test_old_rate().into());
-    }
-
-    #[test]
-    #[should_panic(expected = "Not enough NEAR")]
-    fn test_cannot_buy_zero() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-
-        let mut contract = Contract::new(accounts(1));
-        contract.extend_guardians(vec![accounts(2)]);
-
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .build());
-        contract.storage_deposit(None, None);
-
-        const TOO_LESS_NEAR: Balance = 90_000;
-
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(TOO_LESS_NEAR)
-            .build());
-
-        contract
-            .oracle
-            .set_exchange_rate(ExchangeRate::test_fresh_rate());
-        contract.buy(ExchangeRate::test_fresh_rate().into());
-    }
-
-    #[test]
-    #[should_panic(expected = "Not allowed to sell 0 tokens")]
-    fn test_cannot_sell_zero() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-
-        let mut contract = Contract::new(accounts(1));
-        contract.extend_guardians(vec![accounts(2)]);
-
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .build());
-        contract.storage_deposit(None, None);
-
-        testing_env!(context
-            .signer_account_id(accounts(2))
-            .attached_deposit(ONE_YOCTO)
-            .build());
-
-        let fresh_rate = ExchangeRate::test_fresh_rate();
-
-        contract.token.internal_deposit(&accounts(2), 1);
-        contract.oracle.set_exchange_rate(fresh_rate.clone());
-        contract.sell(U128::from(0), fresh_rate.into());
-    }
-
-    #[test]
-    #[should_panic(expected = "Slippage error")]
-    fn test_slippage_error() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-
-        let mut contract = Contract::new(accounts(1));
-        contract.extend_guardians(vec![accounts(2)]);
-
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .build());
-        contract.storage_deposit(None, None);
-
-        testing_env!(context
-            .signer_account_id(accounts(2))
-            .attached_deposit(ONE_YOCTO)
-            .build());
-
-        let fresh_rate = ExchangeRate::test_fresh_rate();
-
-        contract.token.internal_deposit(&accounts(2), 1);
-        contract.oracle.set_exchange_rate(fresh_rate.clone());
-
-        let mut expected_rate: ExpectedRate = fresh_rate.clone().into();
-        expected_rate.multiplier = (fresh_rate.multiplier() * 95 / 100).into();
-
-        contract.sell(U128::from(1), expected_rate);
     }
 
     #[test]

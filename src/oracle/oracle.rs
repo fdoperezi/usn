@@ -60,10 +60,6 @@ impl Default for Oracle {
 }
 
 impl Oracle {
-    // pub fn set_exchange_rate(&mut self, exchange_rate: ExchangeRate) {
-    //     self.last_report = Some(exchange_rate);
-    // }
-
     pub fn get_exchange_rate_promise(&self) -> Promise {
         ext_priceoracle::get_price_data(
             vec![CONFIG.asset_id.into()],
