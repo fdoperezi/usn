@@ -100,7 +100,7 @@ trait ContractCallback {
         &mut self,
         account: AccountId,
         near: U128,
-        expected: ExpectedRate,
+        expected: Option<ExpectedRate>,
         #[callback] price: PriceData,
     ) -> U128;
 
@@ -109,7 +109,7 @@ trait ContractCallback {
         &mut self,
         account: AccountId,
         tokens: U128,
-        expected: ExpectedRate,
+        expected: Option<ExpectedRate>,
         #[callback] price: PriceData,
     ) -> Promise;
 
@@ -125,7 +125,7 @@ trait ContractCallback {
         &mut self,
         account: AccountId,
         near: U128,
-        expected: ExpectedRate,
+        expected: Option<ExpectedRate>,
         price: PriceData,
     ) -> U128;
 
@@ -133,7 +133,7 @@ trait ContractCallback {
         &mut self,
         account: AccountId,
         tokens: U128,
-        expected: ExpectedRate,
+        expected: Option<ExpectedRate>,
         price: PriceData,
     ) -> Promise;
 
@@ -149,7 +149,7 @@ impl ContractCallback for Contract {
         &mut self,
         account: AccountId,
         near: U128,
-        expected: ExpectedRate,
+        expected: Option<ExpectedRate>,
         #[callback] price: PriceData,
     ) -> U128 {
         let rate: ExchangeRate = price.into();
@@ -162,7 +162,7 @@ impl ContractCallback for Contract {
         &mut self,
         account: AccountId,
         tokens: U128,
-        expected: ExpectedRate,
+        expected: Option<ExpectedRate>,
         #[callback] price: PriceData,
     ) -> Promise {
         let rate: ExchangeRate = price.into();
@@ -305,14 +305,16 @@ impl Contract {
     /// NOTE: The method returns a promise, but SDK doesn't support clone on promise and we
     ///     want to return a promise in the middle.
     #[payable]
-    pub fn buy(&mut self, expected: ExpectedRate) {
+    pub fn buy(&mut self, expected: Option<ExpectedRate>, to: Option<AccountId>) {
         // TODO: Should regular people be able to buy?
         self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
 
-        let account = env::predecessor_account_id();
         let near = env::attached_deposit();
+
+        // Select target account.
+        let account = to.unwrap_or_else(env::predecessor_account_id);
 
         self.oracle
             .get_exchange_rate_promise()
@@ -343,10 +345,21 @@ impl Contract {
         &mut self,
         account: AccountId,
         near: Balance,
-        expected: ExpectedRate,
+        expected: Option<ExpectedRate>,
         rate: ExchangeRate,
     ) -> Balance {
-        Self::assert_exchange_rate(&rate, &expected);
+        if let Some(expected) = expected {
+            Self::assert_exchange_rate(&rate, &expected);
+        }
+
+        // Auto-registration of the target account.
+        let registration_fee = match self.storage_balance_of(account.clone()) {
+            Some(_) => 0u128,
+            None => self.storage_deposit_from_already_attached(&account, near),
+        };
+
+        // Panics if attached deposit is not enough to proceed.
+        let near = near - registration_fee;
 
         let spread = U256::from(10u128.pow(SPREAD_DECIMAL as u32) - self.spread); // 1 - 0.01
         let near = U256::from(near);
@@ -374,7 +387,7 @@ impl Contract {
     /// Sells USN tokens getting NEAR tokens.
     /// Return amount of purchased NEAR tokens.
     #[payable]
-    pub fn sell(&mut self, amount: U128, expected: ExpectedRate) -> Promise {
+    pub fn sell(&mut self, amount: U128, expected: Option<ExpectedRate>) -> Promise {
         assert_one_yocto();
         // TODO: Ditto
         self.assert_owner_or_guardian();
@@ -388,6 +401,7 @@ impl Contract {
         }
 
         let account = env::predecessor_account_id();
+
         self.oracle
             .get_exchange_rate_promise()
             .then(ext_self::sell_with_price_callback(
@@ -407,10 +421,12 @@ impl Contract {
         &mut self,
         account: AccountId,
         amount: Balance,
-        expected: ExpectedRate,
+        expected: Option<ExpectedRate>,
         rate: ExchangeRate,
     ) -> Balance {
-        Self::assert_exchange_rate(&rate, &expected);
+        if let Some(expected) = expected {
+            Self::assert_exchange_rate(&rate, &expected);
+        }
 
         let spread = 10u128.pow(SPREAD_DECIMAL as u32) + self.spread; // 1 + 0.01
 
@@ -623,6 +639,23 @@ impl FungibleTokenMetadataProvider for Contract {
     }
 }
 
+#[near_bindgen]
+impl Contract {
+    fn storage_deposit_from_already_attached(
+        &mut self,
+        account_id: &AccountId,
+        amount: Balance,
+    ) -> Balance {
+        let min_balance = self.storage_balance_bounds().min.0;
+        if amount < min_balance {
+            env::panic_str("The attached deposit is less than the minimum storage balance");
+        }
+
+        self.token.internal_register_account(&account_id);
+        min_balance
+    }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use near_sdk::test_utils::{accounts, VMContextBuilder};
@@ -829,7 +862,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new(accounts(1));
         testing_env!(context.predecessor_account_id(accounts(2)).build());
-        contract.buy(ExchangeRate::test_fresh_rate().into());
+        contract.buy(None, None);
     }
 
     #[test]
@@ -851,22 +884,56 @@ mod tests {
             .attached_deposit(ONE_NEAR)
             .build());
 
-        let fresh_rate = ExchangeRate::test_fresh_rate();
         let old_rate = ExchangeRate::test_old_rate();
 
-        contract.buy(fresh_rate.into());
+        contract.buy(None, None);
 
         testing_env!(context.attached_deposit(ONE_YOCTO).build());
 
-        contract.sell(U128::from(11032461000000000000), old_rate.clone().into());
-        contract.buy(old_rate.clone().into());
+        contract.sell(U128::from(11032461000000000000), None);
+        contract.buy(Some(old_rate.clone().into()), None);
 
         testing_env!(context.attached_deposit(ONE_YOCTO).build());
 
         let mut expected_rate: ExpectedRate = old_rate.clone().into();
         expected_rate.multiplier = (old_rate.multiplier() * 96 / 100).into();
 
-        contract.sell(U128::from(9900000000000000000), expected_rate);
+        contract.sell(U128::from(9900000000000000000), Some(expected_rate));
+    }
+
+    #[test]
+    fn test_buy_auto_registration() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+        contract.extend_guardians(vec![accounts(2)]);
+
+        testing_env!(context
+            .predecessor_account_id(accounts(2))
+            .attached_deposit(ONE_NEAR + u128::from(contract.storage_balance_bounds().min))
+            .build());
+
+        contract.buy(None, None);
+
+        testing_env!(context.attached_deposit(ONE_YOCTO).build());
+
+        contract.sell(U128::from(11032461000000000000), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "The attached deposit is less than the minimum storage balance")]
+    fn test_buy_auto_registration_fails() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(1));
+        contract.finish_buy(
+            accounts(2),
+            u128::from(contract.storage_balance_bounds().min) - 1,
+            None,
+            ExchangeRate::test_fresh_rate(),
+        );
     }
 
     #[test]
@@ -889,7 +956,7 @@ mod tests {
             .predecessor_account_id(accounts(2))
             .attached_deposit(ONE_NEAR)
             .build());
-        contract.buy(ExchangeRate::test_fresh_rate().into());
+        contract.buy(None, None);
     }
 
     #[test]
@@ -912,7 +979,7 @@ mod tests {
             .predecessor_account_id(accounts(2))
             .attached_deposit(ONE_YOCTO)
             .build());
-        contract.sell(U128::from(1), ExchangeRate::test_old_rate().into());
+        contract.sell(U128::from(1), Some(ExchangeRate::test_old_rate().into()));
     }
 
     #[test]
@@ -947,7 +1014,7 @@ mod tests {
             contract.finish_buy(
                 accounts(2),
                 1_000_000_000_000 * ONE_NEAR,
-                expected_rate.clone(),
+                Some(expected_rate.clone()),
                 fresh_rate.clone(),
             ),
             11032461000000_000000000000000000
@@ -961,7 +1028,7 @@ mod tests {
             contract.finish_sell(
                 accounts(2),
                 11032461000000_000000000000000000,
-                expected_rate,
+                Some(expected_rate),
                 fresh_rate,
             ),
             980_198_019_801_980198019801980198019801
@@ -988,7 +1055,7 @@ mod tests {
         contract.finish_sell(
             accounts(2),
             11032461000000_000000000000000000,
-            expected_rate,
+            Some(expected_rate),
             fresh_rate,
         );
     }
