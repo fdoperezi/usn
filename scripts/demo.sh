@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ENV="testnet"
+ENV="sandbox"
 RED="\033[0;31m"
 NC='\033[0m'
 NEAR_PRICE="113400"
@@ -37,10 +37,13 @@ near call $ID storage_deposit '' --accountId bob.$ID --amount 0.00125 $SANDBOX
 
 echo -e "\n${RED}BOB BUYS SOME TOKENS:${NC}"
 near call $ID extend_guardians --accountId $ID --args '{"guardians": ["'bob.$ID'"]}' $SANDBOX
-
 near call $ID buy '{"expected": {"multiplier": "'$NEAR_PRICE'", "decimals": 28, "slippage": "10000"}}' --accountId bob.$ID --amount 0.1 $SANDBOX --gas 200000000000000
-
 near view $ID ft_balance_of --args '{"account_id": "'bob.$ID'"}' $SANDBOX
+
+near create-account alice.$ID --masterAccount $ID --initialBalance 1 $SANDBOX
+
+echo -e "\n${RED}ALICE BUYS SOME TOKENS WITH AUTO-REGISTRATION:${NC}"
+near call $ID buy --accountId alice.$ID --amount 0.1 $SANDBOX --gas 200000000000000
 
 echo -e "\n${RED}BOB BUYS SOME TOKENS WITH WRONG SLIPPAGE:${NC}"
 

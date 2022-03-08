@@ -13,9 +13,9 @@ The specific part of the USN contract is `buy`/`sell` methods of NEAR/USD exchan
 
 ## Contract Address
 
-| Mainnet  | Testnet  |
-|----------|----------|
-| usn      | -        |
+| Mainnet  | Testnet      |
+|----------|--------------|
+| usn      | usdn.testnet |
 
 ## How It Works
 

@@ -2,20 +2,19 @@
 
 title Buy USN
 
-Alice -> usn: send NEAR\n+ expected rate\n+ slippage
-usn -> usn: check price cache
+alice -> usn: send NEAR\n+ expected rate\n+ slippage\n+ transfer to
 
-alt Cache is invalidated
 usn -> priceoracle: ""get_price_data""
 activate priceoracle
 usn <- priceoracle: NEAR/USDT rate
 deactivate priceoracle
 usn -> usn: verify timestamp
-usn -> usn: update cache
-end
 
 usn -> usn: assert slippage
 usn -> usn: mint USN
 
-Alice <-- usn: USN amount
+alice <-- usn: USN amount
+alt If "transfer to" is defined
+bob <-- usn: USN amount
+end
 @enduml
