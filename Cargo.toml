@@ -2,7 +2,7 @@
 authors = ["Binary Star <as@binary-star.org>"]
 edition = "2018"
 name = "usn"
-version = "0.1.4"
+version = "0.1.5"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
