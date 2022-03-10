@@ -20,5 +20,9 @@ jobs:
       run: cargo fmt -- --check
     - name: Run unit tests
       run: cargo test --verbose
+    - name: Install NPM dependencies
+      run: npm install
+    - name: Build USN
+      run: npm run build
     - name: Run integration tests on sandbox
       run: npm run test
