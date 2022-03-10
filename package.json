@@ -9,11 +9,16 @@
     "demo": "./scripts/demo.sh",
     "upgrade": "node scripts/upgrade.js",
     "sandbox:init": "rm -rf /tmp/near-usn-sandbox && near-sandbox --home /tmp/near-usn-sandbox init",
-    "sandbox": "near-sandbox --home /tmp/near-usn-sandbox run"
+    "sandbox": "near-sandbox --home /tmp/near-usn-sandbox run",
+    "sandbox:test": "rm -rf /tmp/near-usn-test-sandbox && near-sandbox --home /tmp/near-usn-test-sandbox init && near-sandbox --home /tmp/near-usn-test-sandbox run",
+    "test": "mocha --require tests/sandbox-start.js --require tests/sandbox-setup.js tests"
   },
   "devDependencies": {
     "bn": "^1.0.5",
+    "is-reachable": "^5.1.1",
+    "mocha": "^9.1.3",
     "near-api-js": "^0.44.2",
-    "near-sandbox": "^0.0.8"
+    "near-sandbox": "^0.0.8",
+    "tree-kill": "^1.2.2"
   }
 }
