@@ -77,7 +77,7 @@ describe('Owner', function () {
     assert.equal(await global.usnContract.get_owner(), config.aliceId);
   });
 
-  it('can lost ownership', async () => {
+  it('can change ownership', async () => {
     assert.rejects(async () => {
       await global.usnContract.set_owner({ args: { owner_id: config.usnId } });
     });
