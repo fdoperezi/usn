@@ -29,6 +29,7 @@ const usnMethods = {
     'spread',
     'contract_status',
     'get_owner',
+    'ft_balance_of',
   ],
   changeMethods: [
     'new',
@@ -47,6 +48,8 @@ const usnMethods = {
     'buy',
     'sell',
     'ft_transfer',
+    'storage_deposit',
+    'storage_unregister'
   ],
 };
 
