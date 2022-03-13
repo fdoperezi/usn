@@ -332,6 +332,7 @@ describe('User is not registered', async function () {
     // 5.71 NEAR -> 5.68 NEAR
     const near_before = parseInt(balance.substring(0, 3));
     const near_after = parseInt(balance2.substring(0, 3));
+    console.log(near_before, near_after);
     assert(near_before - near_after < 4);
   });
 
