@@ -10,7 +10,10 @@ usn <- priceoracle: NEAR/USDT rate
 deactivate priceoracle
 usn -> usn: verify timestamp
 
+alt If expected rate and slippage is passed
 usn -> usn: assert slippage
+end
+
 usn -> usn: burn USN
 alice <-- usn: send NEAR
 @enduml

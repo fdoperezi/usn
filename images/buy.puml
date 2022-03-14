@@ -10,7 +10,10 @@ usn <- priceoracle: NEAR/USDT rate
 deactivate priceoracle
 usn -> usn: verify timestamp
 
+alt if expected rate and slippage is passed
 usn -> usn: assert slippage
+end
+
 usn -> usn: mint USN
 
 alice <-- usn: USN amount

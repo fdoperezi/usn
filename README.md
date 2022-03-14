@@ -9,110 +9,115 @@ The contract implements fungible token API according to the following standards:
 2. [NEP-148](https://nomicon.io/Standards/FungibleToken/Metadata)
 3. [Fungible Token Event](https://nomicon.io/Standards/FungibleToken/Event)
 
-The specific part of the USN contract is `buy`/`sell` methods of NEAR/USD exchange with rates taken from the oracle (`priceoracle`).
+The specific part of the USN contract is `buy`/`sell` methods of NEAR/USD exchange with rates taken from the oracle ([priceoracle](https://github.com/NearDeFi/price-oracle/)).
 
-## Contract Address
+# Contract Address
 
 | Mainnet  | Testnet      |
 |----------|--------------|
 | usn      | usdn.testnet |
 
-## How It Works
+# How It Works
 
-### Buy USN for NEAR
+## Buy USN for NEAR
 *Method:* `buy`
 
 <img alt="Buy USN" src="images/buy.svg" />
 
-### Sell USN for NEAR with `sell` API
+## Sell USN for NEAR with `sell` API
 *Method:* `sell`
 
 <img alt="Sell USN" src="images/sell.svg" />
 
-### Cache
-
-The cache stores the exchange rate from the [priceoracle](https://github.com/NearDeFi/price-oracle/) to avoid cross-contract calls for a period of time when the price is still valid. Cross-contract calls are very expensive for users. The cache is valid during the reported recency duration interval, it allows to make 0 cross-contract calls for a while (up to 50 seconds).
-
-### Slippage
+## Slippage
 
 Methods `buy` and `sell` requires the _expected_ exchange rate to avoid slippage. If the price suddenly changes (slips) out of the expected deviation the USN contract aborts the transaction.
 
+# Build
 
-## Test
-### Add a Guardian
-
-Guardians can be added and removed by owner.
-```rust
-pub fn extend_guardians(&mut self, guardians: Vec<AccountId>);
-pub fn remove_guardians(&mut self, guardians: Vec<AccountId>);
-```
-Example:
+First, install prerequisites:
 ```bash
-near call usn.binary-star.near extend_guardians --accountId binary-star.near --args '{"guardians": ["alice.near"]}'
+npm install
 ```
+Then, build.
 
-### Buy and Sell
-
-USN token provides in-built _currency exchange_ API: `buy` and `sell`.
-
-```rust
-#[payable]
-pub fn buy(&mut self) -> Balance;
-pub fn sell(&mut self, amount: U128) -> Balance;
-```
-Example of usage with NEAR CLI:
-
+For local sandbox:
 ```bash
-# Register an account in the USN contract.
-near call usn.testnet storage_deposit '' --accountId alice.testnet --amount 0.00125
-
-# Send NEAR, buy USN.
-near call usn.testnet buy --accountId alice.testnet --amount 0.01
-
-# Check the USN balance.
-near call usn.testnet ft_balance_of --accountId alice.testnet --args '{"account_id": "alice.testnet"}'
-
-# Sell USN, receive NEAR.
-near call usn.testnet sell --accountId alice.testnet --args '{"amount": "118800"}'
+npm run build
 ```
 
-## Build
-
-Add Rust `wasm32` target:
+For testnet:
 ```bash
-rustup target add wasm32-unknown-unknown
+npm run build:testnet
 ```
-Build the contract:
 
+For mainnet:
 ```bash
-cargo build --target wasm32-unknown-unknown --release
+npm run build:mainnet
 ```
+**WARNING**: There is a difference in each target. The crucial difference is that they communicate with different oracle addresses:
+* Mainnet: `priceoracle.near`
+* Testnet: `priceoracle.testnet`
+* Sandbox: `priceoracle.test.near`
 
+And all these oracle contracts report prices with different asset names.
+
+# Test
+## Run unit tests
 ```bash
 cargo test
 ```
 
-## Deploy
-
-### On `sandbox`:
-
-Install sandbox:
-
+## Run integration tests
 ```bash
-npm install -g near-sandbox
-near-sandbox --home /tmp/near-sandbox init
-near-sandbox --home /tmp/near-sandbox run
+npm run build
+npm run deploy
+npm run test
 ```
 
-Deploy:
-
+## Manual testing on the Testnet
+Build
 ```bash
-$ near deploy --wasmFile target/wasm32-unknown-unknown/release/usn.wasm --initFunction new_default_meta --initArgs '{"owner_id": "test.near", "1000000000000000000"}' --accountId test.near --networkId sandbox --nodeUrl http://0.0.0.0:3030 --keyPath /tmp/near-sandbox/validator_key.json
+npm run build:testnet
+```
+Deploy
+```bash
+near deploy --force --wasmFile target/wasm32-unknown-unknown/testnet/usn.wasm --accountId=usdn.testnet --masterAccount=usdn.testnet
+```
+Init once
+```bash
+near call usdn.testnet new --args '{"owner_id": "usdn.testnet"}' --accountId=usdn.testnet
 ```
 
-### On `mainnet`:
+Add a guardian
 
 ```bash
-$ near deploy --wasmFile target/wasm32-unknown-unknown/release/usn.wasm --initFunction new_default_meta --initArgs '{"owner_id": "usn.near", "1000000000000000000"}' --accountId=usn.near --networkId=mainnet --nodeUrl=https://rpc.mainnet.near.org
-
+near call usdn.testnet extend_guardians --accountId usdn.testnet --args '{"guardians": ["alice.testnet"]}'
 ```
+
+Buy and sell
+
+```bash
+# Send NEAR, buy USN.
+near call usdn.testnet buy --accountId alice.testnet --amount 1 --gas 50000000000000
+
+# Check USN balance.
+near call usdn.testnet ft_balance_of --accountId alice.testnet --args '{"account_id": "alice.testnet"}'
+
+# Sell USN, receive NEAR.
+near call usdn.testnet sell --accountId alice.testnet --args '{"amount": "118800"}' --gas 50000000000000
+
+# Buy USN with slippage control
+ near call usdn.testnet buy  --args '{"expected": {"multiplier": "111439", "slippage": "10", "decimals": "28" }}' --accountId alice.testnet --amount 1 --gas 50000000000000
+
+# Buy USN and transfer to someone.
+near call usdn.testnet buy --args '{"to": "bob.testnet"}' --accountId alice.testnet --amount 1 --gas 50000000000000
+```
+
+# DAO
+## Upgrade the contract via Upgrade Proposal
+1. Download `usn.mainnet.wasm` from https://github.com/binary-star-near/usn/releases
+2. Create an upgrade proposal:
+   ```bash
+   sputnikdao proposal upgrade usn.mainnet.wasm usn --daoAcc usn --accountId alice.near --network mainnet
+   ```
