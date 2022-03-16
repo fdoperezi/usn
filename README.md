@@ -105,7 +105,7 @@ near call usdn.testnet buy --accountId alice.testnet --amount 1 --gas 5000000000
 near call usdn.testnet ft_balance_of --accountId alice.testnet --args '{"account_id": "alice.testnet"}'
 
 # Sell USN, receive NEAR.
-near call usdn.testnet sell --accountId alice.testnet --args '{"amount": "118800"}' --gas 50000000000000
+near call usdn.testnet sell --accountId alice.testnet --args '{"amount": "118800"}' --amount 0.000000000000000000000001 --gas 50000000000000
 
 # Buy USN with slippage control
  near call usdn.testnet buy  --args '{"expected": {"multiplier": "111439", "slippage": "10", "decimals": "28" }}' --accountId alice.testnet --amount 1 --gas 50000000000000
