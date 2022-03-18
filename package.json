@@ -3,6 +3,7 @@
   "scripts": {
     "prebuild": "rustup target add wasm32-unknown-unknown",
     "build": "cargo build --target wasm32-unknown-unknown --profile sandbox",
+    "build:sandbox": "npm run build",
     "build:testnet": "cargo build --target wasm32-unknown-unknown --profile testnet --features testnet",
     "build:mainnet": "cargo build --target wasm32-unknown-unknown --profile mainnet --features mainnet",
     "deploy": "./scripts/deploy.sh",
@@ -11,6 +12,7 @@
     "sandbox:init": "rm -rf /tmp/near-usn-sandbox && near-sandbox --home /tmp/near-usn-sandbox init",
     "sandbox": "near-sandbox --home /tmp/near-usn-sandbox run",
     "sandbox:test": "rm -rf /tmp/near-usn-test-sandbox && near-sandbox --home /tmp/near-usn-test-sandbox init && near-sandbox --home /tmp/near-usn-test-sandbox run",
+    "pretest": "npm run build",
     "test": "mocha --require tests/sandbox-start.js --require tests/sandbox-setup.js tests"
   },
   "devDependencies": {

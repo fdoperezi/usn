@@ -1,6 +1,5 @@
 pub mod emit {
     use near_contract_standards::fungible_token::events::{FtBurn, FtMint};
-    use near_sdk::serde_json::json;
 
     use crate::*;
 
@@ -20,18 +19,5 @@ pub mod emit {
             memo: memo,
         })
         .emit();
-    }
-
-    pub fn storage_unregister(owner_id: AccountId, amount: Balance) {
-        let event = json!({
-            "standard": "nep145",
-            "version": "1.0.0",
-            "event": "storage_unregister",
-            "data": [
-                {"owner_id": owner_id, "amount": U128::from(amount)}
-            ]
-        });
-
-        log!("EVENT_JSON:{}", event.to_string());
     }
 }

@@ -1,4 +1,5 @@
 mod event;
+mod ft;
 mod oracle;
 mod owner;
 
@@ -7,18 +8,18 @@ use near_contract_standards::fungible_token::metadata::{
     FungibleTokenMetadata, FungibleTokenMetadataProvider, FT_METADATA_SPEC,
 };
 use near_contract_standards::fungible_token::resolver::FungibleTokenResolver;
-use near_contract_standards::fungible_token::FungibleToken;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LazyOption, LookupMap, UnorderedSet};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    assert_one_yocto, env, ext_contract, is_promise_success, log, near_bindgen, sys, AccountId,
-    Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
+    assert_one_yocto, env, ext_contract, is_promise_success, near_bindgen, sys, AccountId, Balance,
+    BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
 };
 
 use std::fmt::Debug;
 
+use crate::ft::FungibleTokenFreeStorage;
 use oracle::{ExchangeRate, Oracle, PriceData};
 
 uint::construct_uint!(
@@ -82,7 +83,7 @@ pub struct ExpectedRate {
 pub struct Contract {
     owner_id: AccountId,
     guardians: UnorderedSet<AccountId>,
-    token: FungibleToken,
+    token: FungibleTokenFreeStorage,
     metadata: LazyOption<FungibleTokenMetadata>,
     black_list: LookupMap<AccountId, BlackListStatus>,
     status: ContractStatus,
@@ -118,6 +119,9 @@ trait ContractCallback {
 
     #[private]
     fn return_value(&mut self, value: U128) -> U128;
+
+    #[private]
+    fn handle_unregister(&mut self, account: AccountId);
 }
 
 trait ContractCallback {
@@ -214,7 +218,7 @@ impl Contract {
         let mut this = Self {
             owner_id: owner_id.clone(),
             guardians: UnorderedSet::new(StorageKey::Guardians),
-            token: FungibleToken::new(StorageKey::Token),
+            token: FungibleTokenFreeStorage::new(StorageKey::Token),
             metadata: LazyOption::new(StorageKey::TokenMetadata, Some(&metadata)),
             black_list: LookupMap::new(StorageKey::Blacklist),
             status: ContractStatus::Working,
@@ -222,7 +226,6 @@ impl Contract {
             spread: DEFAULT_SPREAD,
         };
 
-        this.token.internal_register_account(&owner_id);
         this.token.internal_deposit(&owner_id, NO_DEPOSIT);
         this
     }
@@ -351,15 +354,6 @@ impl Contract {
         if let Some(expected) = expected {
             Self::assert_exchange_rate(&rate, &expected);
         }
-
-        // Auto-registration of the target account.
-        let registration_fee = match self.storage_balance_of(account.clone()) {
-            Some(_) => 0u128,
-            None => self.storage_deposit_from_already_attached(&account, near),
-        };
-
-        // Panics if attached deposit is not enough to proceed.
-        let near = near - registration_fee;
 
         let spread = U256::from(10u128.pow(SPREAD_DECIMAL as u32) - self.spread); // 1 - 0.01
         let near = U256::from(near);
@@ -532,10 +526,6 @@ impl Contract {
         }
     }
 
-    fn on_account_closed(&mut self, account_id: AccountId, balance: Balance) {
-        event::emit::storage_unregister(account_id, balance);
-    }
-
     fn on_tokens_burned(&mut self, account_id: AccountId, amount: Balance) {
         event::emit::ft_burn(&account_id, amount, None)
     }
@@ -598,7 +588,8 @@ impl FungibleTokenCore for Contract {
     ) -> PromiseOrValue<U128> {
         self.abort_if_pause();
         self.abort_if_blacklisted();
-        self.token.ft_transfer_call(receiver_id, amount, memo, msg)
+        self.token
+            .ft_transfer_call(receiver_id.clone(), amount, memo, msg)
     }
 
     fn ft_total_supply(&self) -> U128 {
@@ -630,29 +621,10 @@ impl FungibleTokenResolver for Contract {
     }
 }
 
-near_contract_standards::impl_fungible_token_storage!(Contract, token, on_account_closed);
-
 #[near_bindgen]
 impl FungibleTokenMetadataProvider for Contract {
     fn ft_metadata(&self) -> FungibleTokenMetadata {
         self.metadata.get().unwrap()
-    }
-}
-
-#[near_bindgen]
-impl Contract {
-    fn storage_deposit_from_already_attached(
-        &mut self,
-        account_id: &AccountId,
-        amount: Balance,
-    ) -> Balance {
-        let min_balance = self.storage_balance_bounds().min.0;
-        if amount < min_balance {
-            env::panic_str("The attached deposit is less than the minimum storage balance");
-        }
-
-        self.token.internal_register_account(&account_id);
-        min_balance
     }
 }
 
@@ -712,11 +684,9 @@ mod tests {
 
         testing_env!(context
             .storage_usage(env::storage_usage())
-            .attached_deposit(contract.storage_balance_bounds().min.into())
             .predecessor_account_id(accounts(1))
             .build());
         // Paying for account registration, aka storage deposit
-        contract.storage_deposit(None, None);
 
         testing_env!(context
             .storage_usage(env::storage_usage())
@@ -746,17 +716,13 @@ mod tests {
         let mut contract = Contract::new(accounts(1));
 
         // Act as a user.
-        testing_env!(context
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .predecessor_account_id(accounts(2))
-            .build());
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         assert_eq!(
             contract.blacklist_status(&accounts(1)),
             BlackListStatus::Allowable
         );
 
-        contract.storage_deposit(None, None);
         contract.token.internal_deposit(&accounts(2), 1000);
         assert_eq!(contract.ft_balance_of(accounts(2)), U128::from(1000));
 
@@ -873,11 +839,7 @@ mod tests {
         let mut contract = Contract::new(accounts(1));
         contract.extend_guardians(vec![accounts(2)]);
 
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .build());
-        contract.storage_deposit(None, None);
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         testing_env!(context
             .predecessor_account_id(accounts(2))
@@ -909,10 +871,7 @@ mod tests {
         let mut contract = Contract::new(accounts(1));
         contract.extend_guardians(vec![accounts(2)]);
 
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(ONE_NEAR + u128::from(contract.storage_balance_bounds().min))
-            .build());
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         contract.buy(None, None);
 
@@ -921,20 +880,20 @@ mod tests {
         contract.sell(U128::from(11032461000000000000), None);
     }
 
-    #[test]
-    #[should_panic(expected = "The attached deposit is less than the minimum storage balance")]
-    fn test_buy_auto_registration_fails() {
-        let context = get_context(accounts(1));
-        testing_env!(context.build());
+    // #[test]
+    // #[should_panic(expected = "The attached deposit is less than the minimum storage balance")]
+    // fn test_buy_auto_registration_fails() {
+    //     let context = get_context(accounts(1));
+    //     testing_env!(context.build());
 
-        let mut contract = Contract::new(accounts(1));
-        contract.finish_buy(
-            accounts(2),
-            u128::from(contract.storage_balance_bounds().min) - 1,
-            None,
-            ExchangeRate::test_fresh_rate(),
-        );
-    }
+    //     let mut contract = Contract::new(accounts(1));
+    //     contract.finish_buy(
+    //         accounts(2),
+    //         u128::from(contract.storage_balance_bounds().min) - 1,
+    //         None,
+    //         ExchangeRate::test_fresh_rate(),
+    //     );
+    // }
 
     #[test]
     #[should_panic(expected = "Account 'charlie' is banned")]
@@ -946,11 +905,7 @@ mod tests {
         contract.extend_guardians(vec![accounts(2)]);
         contract.add_to_blacklist(&accounts(2)); // It'll cause panic on buy.
 
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .build());
-        contract.storage_deposit(None, None);
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         testing_env!(context
             .predecessor_account_id(accounts(2))
@@ -969,11 +924,7 @@ mod tests {
         contract.extend_guardians(vec![accounts(2)]);
         contract.add_to_blacklist(&accounts(2)); // It'll cause panic on sell.
 
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .build());
-        contract.storage_deposit(None, None);
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         testing_env!(context
             .predecessor_account_id(accounts(2))
@@ -1001,11 +952,7 @@ mod tests {
 
         let mut contract = Contract::new(accounts(1));
 
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .build());
-        contract.storage_deposit(None, None);
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         let fresh_rate = ExchangeRate::test_fresh_rate();
         let expected_rate: ExpectedRate = fresh_rate.clone().into();
@@ -1043,11 +990,7 @@ mod tests {
 
         let mut contract = Contract::new(accounts(1));
 
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(contract.storage_balance_bounds().min.into())
-            .build());
-        contract.storage_deposit(None, None);
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         let fresh_rate = ExchangeRate::test_fresh_rate();
         let expected_rate: ExpectedRate = fresh_rate.clone().into();
