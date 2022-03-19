@@ -33,7 +33,6 @@ const GAS_FOR_BUY_PROMISE: Gas = Gas(10_000_000_000_000);
 const GAS_FOR_SELL_PROMISE: Gas = Gas(15_000_000_000_000);
 const GAS_FOR_RETURN_VALUE_PROMISE: Gas = Gas(5_000_000_000_000);
 
-const DEFAULT_SPREAD: Balance = 10_000; // 0.01 (10^4 / 10^6) = 1%
 const MAX_SPREAD: Balance = 50_000; // 0.05 = 5%
 const SPREAD_DECIMAL: u8 = 6;
 
@@ -88,7 +87,7 @@ pub struct Contract {
     black_list: LookupMap<AccountId, BlackListStatus>,
     status: ContractStatus,
     oracle: Oracle,
-    spread: Balance,
+    spread: Option<Balance>,
 }
 
 const DATA_IMAGE_SVG_NEAR_ICON: &str =
@@ -223,7 +222,7 @@ impl Contract {
             black_list: LookupMap::new(StorageKey::Blacklist),
             status: ContractStatus::Working,
             oracle: Oracle::default(),
-            spread: DEFAULT_SPREAD,
+            spread: None,
         };
 
         this.token.internal_deposit(&owner_id, NO_DEPOSIT);
@@ -355,16 +354,22 @@ impl Contract {
             Self::assert_exchange_rate(&rate, &expected);
         }
 
-        let spread = U256::from(10u128.pow(SPREAD_DECIMAL as u32) - self.spread); // 1 - 0.01
         let near = U256::from(near);
         let multiplier = U256::from(rate.multiplier());
 
         // Make exchange: NEAR -> USN.
-        let amount = near * multiplier * spread
-            / 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL));
+        let amount = near * multiplier / 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL));
 
         // Expected result (128-bit) can have 20 digits before and 18 after the decimal point.
-        // It panics if overflows. We don't expect more than 10^20 tokens on a single account.
+        // We don't expect more than 10^20 tokens on a single account. It panics if overflows.
+        let amount = amount.as_u128();
+
+        // Commission.
+        let spread_denominator = 10u128.pow(SPREAD_DECIMAL as u32);
+        let spread_multiplier = spread_denominator - self.spread_u128(amount); // 1 - 0.005
+        let amount = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator; // amount * 0.995
+
+        // The final amount is going to be less than u128 after removing commission.
         let amount = amount.as_u128();
 
         if amount == 0 {
@@ -422,14 +427,16 @@ impl Contract {
             Self::assert_exchange_rate(&rate, &expected);
         }
 
-        let spread = 10u128.pow(SPREAD_DECIMAL as u32) + self.spread; // 1 + 0.01
+        // Commission.
+        let spread_denominator = 10u128.pow(SPREAD_DECIMAL as u32);
+        let spread_multiplier = spread_denominator - self.spread_u128(amount);
+        let sell = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator;
 
         // Make exchange: USN -> NEAR.
-        let deposit = U256::from(amount)
-            * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL + SPREAD_DECIMAL)))
-            / (rate.multiplier() * spread);
+        let deposit = sell * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL)))
+            / rate.multiplier();
 
-        // Here we say we don't expect too big deposit. Otherwise, panic.
+        // Here we don't expect too big deposit. Otherwise, panic.
         let deposit = deposit.as_u128();
 
         self.token.internal_withdraw(&account, amount);
@@ -482,20 +489,50 @@ impl Contract {
         metadata.expect("Unable to get decimals").decimals
     }
 
-    pub fn spread(&self) -> u128 {
-        self.spread
+    /// Returns either a fixed spread, or a adaptive spread
+    pub fn spread(&self, amount: Option<U128>) -> U128 {
+        let amount = amount.unwrap_or(U128::from(0));
+        self.spread_u128(u128::from(amount)).into()
     }
 
-    pub fn set_spread(&mut self, spread: Balance) {
+    fn spread_u128(&self, amount: u128) -> u128 {
+        match self.spread {
+            Some(spread) => spread,
+            None => {
+                // C1(v) = CHV + (CLV - CHV) * e ^ {-s1 * amount}
+                //     CHV = 0.1%
+                //     CLV = 0.5%
+                //     s1 = 0.0000075
+                //     amount in [1, 10_000_000]
+                // Normalize amount to a number from $0 to $10,000,000.
+
+                let decimals = 10u128.pow(self.decimals() as u32);
+                let n = amount / decimals; // [0, ...], dropping decimals
+                let amount: u128 = if n > 10_000_000 { 10_000_000 } else { n }; // [0, 10_000_000]
+                let exp = (-0.0000075 * amount as f64).exp();
+                let spread = 0.001 + (0.005 - 0.001) * exp;
+                (spread * (10u32.pow(SPREAD_DECIMAL as u32) as f64)).round() as u128
+            }
+        }
+    }
+
+    pub fn set_fixed_spread(&mut self, spread: U128) {
         self.assert_owner();
         self.abort_if_pause();
+        let spread = Balance::from(spread);
         if spread > MAX_SPREAD {
             env::panic_str(&format!(
                 "Spread limit is {}%",
                 MAX_SPREAD / 10u128.pow(SPREAD_DECIMAL as u32)
             ));
         }
-        self.spread = spread;
+        self.spread = Some(spread);
+    }
+
+    pub fn set_adaptive_spread(&mut self) {
+        self.assert_owner();
+        self.abort_if_pause();
+        self.spread = None;
     }
 
     pub fn version(&self) -> String {
@@ -509,8 +546,30 @@ impl Contract {
     #[init(ignore_state)]
     #[private]
     pub fn migrate() -> Self {
-        let this: Contract = env::state_read().expect("Contract is not initialized");
-        this
+        #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+        struct ContractV015 {
+            owner_id: AccountId,
+            guardians: UnorderedSet<AccountId>,
+            token: FungibleTokenFreeStorage,
+            metadata: LazyOption<FungibleTokenMetadata>,
+            black_list: LookupMap<AccountId, BlackListStatus>,
+            status: ContractStatus,
+            oracle: Oracle,
+            spread: Balance,
+        }
+
+        let old: ContractV015 = env::state_read().expect("Contract is not initialized");
+
+        Self {
+            owner_id: old.owner_id,
+            guardians: old.guardians,
+            token: old.token,
+            metadata: old.metadata,
+            black_list: old.black_list,
+            status: old.status,
+            spread: None, // This is a change: adaptive spread by default.
+            oracle: old.oracle,
+        }
     }
 
     fn abort_if_pause(&self) {
@@ -880,21 +939,6 @@ mod tests {
         contract.sell(U128::from(11032461000000000000), None);
     }
 
-    // #[test]
-    // #[should_panic(expected = "The attached deposit is less than the minimum storage balance")]
-    // fn test_buy_auto_registration_fails() {
-    //     let context = get_context(accounts(1));
-    //     testing_env!(context.build());
-
-    //     let mut contract = Contract::new(accounts(1));
-    //     contract.finish_buy(
-    //         accounts(2),
-    //         u128::from(contract.storage_balance_bounds().min) - 1,
-    //         None,
-    //         ExchangeRate::test_fresh_rate(),
-    //     );
-    // }
-
     #[test]
     #[should_panic(expected = "Account 'charlie' is banned")]
     fn test_cannot_buy() {
@@ -934,15 +978,30 @@ mod tests {
     }
 
     #[test]
-    fn test_spread() {
+    fn test_fixed_spread() {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = Contract::new(accounts(1));
-        assert_eq!(contract.spread(), DEFAULT_SPREAD);
-        contract.set_spread(MAX_SPREAD);
-        assert_eq!(contract.spread(), MAX_SPREAD);
-        let res = std::panic::catch_unwind(move || contract.set_spread(MAX_SPREAD + 1));
+
+        contract.set_fixed_spread(MAX_SPREAD.into());
+        assert_eq!(contract.spread(None).0, MAX_SPREAD);
+        let res =
+            std::panic::catch_unwind(move || contract.set_fixed_spread((MAX_SPREAD + 1).into()));
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_adaptive_spread() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new(accounts(1));
+
+        let one_token = 10u128.pow(contract.decimals() as u32);
+        let ten_mln = one_token * 10_000_000;
+
+        contract.set_adaptive_spread();
+        assert_eq!(contract.spread(Some(one_token.into())).0, 5000); // $1: 0.0050000 = 0.5%
+        assert_eq!(contract.spread(Some(ten_mln.into())).0, 1000); // $10mln: 0.001000 = 0.1%
     }
 
     #[test]
@@ -964,7 +1023,7 @@ mod tests {
                 Some(expected_rate.clone()),
                 fresh_rate.clone(),
             ),
-            11032461000000_000000000000000000
+            11132756100000_000000000000000000
         );
 
         testing_env!(context
@@ -974,11 +1033,11 @@ mod tests {
         assert_eq!(
             contract.finish_sell(
                 accounts(2),
-                11032461000000_000000000000000000,
+                11088180500000_000000000000000000,
                 Some(expected_rate),
                 fresh_rate,
             ),
-            980_198_019_801_980198019801980198019801
+            994_005_000000000000000000000000000000
         );
     }
 

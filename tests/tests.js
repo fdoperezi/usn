@@ -2,6 +2,7 @@
 
 const assert = require('assert').strict;
 const config = require('./sandbox-setup').config;
+const BN = require('bn.js');
 
 const ONE_NEAR = '1000000000000000000000000';
 const ONE_YOCTO = '1';
@@ -32,7 +33,7 @@ describe('Anyone', function () {
 
   it('should get a spread', async () => {
     const spread = await global.aliceContract.spread();
-    assert.equal(spread, 10000);
+    assert.equal(spread, '5000');
   });
 
   it('should get contract status', async () => {
@@ -143,7 +144,7 @@ describe('User', async function () {
       amount: ONE_NEAR,
       gas: GAS_FOR_CALL,
     });
-    assert.equal(amount, '11032461000000000000'); // no storage fee
+    assert.equal(amount, '11088180500000000000'); // no storage fee
 
     const expected_amount = await global.aliceContract.ft_balance_of({
       account_id: config.aliceId,
@@ -159,7 +160,7 @@ describe('User', async function () {
       amount: ONE_NEAR,
       gas: GAS_FOR_CALL,
     });
-    assert.equal(amount, '11032461000000000000');
+    assert.equal(amount, '11088180500000000000');
   });
 
   it('should NOT register the recipient having not enough money to buy USN', async () => {
@@ -189,14 +190,13 @@ describe('User', async function () {
       amount: ONE_NEAR,
       gas: GAS_FOR_CALL,
     });
-    assert.equal(amount, '11032461000000000000'); // no storage fee
+    assert.equal(amount, '11088180500000000000'); // no storage fee
 
     const expected_amount = await global.bobContract.ft_balance_of({
       account_id: config.bobId,
     });
     assert.equal(amount, expected_amount);
   });
-
 
   it('can NOT buy with slippage control in place', async () => {
     await assert.rejects(
@@ -239,7 +239,6 @@ describe('User', async function () {
     });
     assert.equal(near, '978972772277227722772277'); // 0.97 NEAR
   });
-
 
   it('spends gas and gets the rest back in case of error', async () => {
     const balance = (await global.aliceContract.account.getAccountBalance())
@@ -308,7 +307,7 @@ describe('User', async function () {
 
   after(async () => {
     await global.usnContract.remove_guardians({
-      args: { guardians: [config.aliceId] },
+      args: { guardians: [config.aliceId, config.bobId] },
     });
   });
 });

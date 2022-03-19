@@ -12,7 +12,7 @@ const config = {
   keyPath: '/tmp/near-usn-test-sandbox/validator_key.json',
   usnPath: './target/wasm32-unknown-unknown/sandbox/usn.wasm',
   priceoraclePath: './tests/priceoracle.wasm',
-  amount: new BN('10000000000000000000000000', 10), // 25 digits
+  amount: new BN('10000000000000000000000000', 10), // 25 digits, 10 NEAR
   masterId: 'test.near',
   usnId: 'usn.test.near',
   oracleId: 'priceoracle.test.near',
@@ -94,11 +94,11 @@ async function sandboxSetup() {
 
   // Deploy the USN contract.
   const wasm = await fs.readFile(config.usnPath);
-  const account = new nearAPI.Account(near.connection, config.usnId);
-  await account.deployContract(wasm);
+  const usnAccount = new nearAPI.Account(near.connection, config.usnId);
+  await usnAccount.deployContract(wasm);
 
   // Initialize the contract.
-  const usnContract = new nearAPI.Contract(account, config.usnId, usnMethods);
+  const usnContract = new nearAPI.Contract(usnAccount, config.usnId, usnMethods);
   await usnContract.new({ args: { owner_id: config.usnId } });
 
   // Deploy the priceoracle contract.
@@ -126,14 +126,16 @@ async function sandboxSetup() {
   });
 
   // Initialize other accounts connected to the contract for all test cases.
-  const alice = new nearAPI.Account(near.connection, config.aliceId);
-  const bob = new nearAPI.Account(near.connection, config.bobId);
-  const aliceContract = new nearAPI.Contract(alice, config.usnId, usnMethods);
-  const bobContract = new nearAPI.Contract(bob, config.usnId, usnMethods);
+  const aliceAccount = new nearAPI.Account(near.connection, config.aliceId);
+  const bobAccount = new nearAPI.Account(near.connection, config.bobId);
+  const aliceContract = new nearAPI.Contract(aliceAccount, config.usnId, usnMethods);
+  const bobContract = new nearAPI.Contract(bobAccount, config.usnId, usnMethods);
 
   // Setup a global test context.
+  global.usnAccount = usnAccount;
   global.usnContract = usnContract;
   global.priceoracleContract = oracleContract;
+  global.aliceAccount = aliceAccount;
   global.aliceContract = aliceContract;
   global.bobContract = bobContract;
 }
