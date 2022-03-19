@@ -385,10 +385,47 @@ describe('Adaptive Spread', async function () {
 
     const amount = await global.aliceContract.buy({
       args: {},
-      amount: HUNDRED_NEARS,
+      amount: ONE_NEAR,
       gas: GAS_FOR_CALL,
     });
-    assert.equal(amount, '1108173932580000000000'); // ~$1108
+    assert.equal(amount, '11077081175600000000'); // ~$11.08
+  });
+
+  it('should be in limits', async () => {
+    // min <= max
+    await assert.rejects(async () => {
+      await global.usnContract.set_adaptive_spread({
+        args: { params: { min: 0.006, max: 0.002, scaler: 0.0001 } },
+      });
+    });
+
+    // min < 0.05
+    await assert.rejects(async () => {
+      await global.usnContract.set_adaptive_spread({
+        args: { params: { min: 0.06, max: 0.01, scaler: 0.0001 } },
+      });
+    });
+
+    // max < 0.05
+    await assert.rejects(async () => {
+      await global.usnContract.set_adaptive_spread({
+        args: { params: { min: 0.01, max: 0.06, scaler: 0.0001 } },
+      });
+    });
+
+    // scaler < 0.4
+    await assert.rejects(async () => {
+      await global.usnContract.set_adaptive_spread({
+        args: { params: { min: 0.01, max: 0.03, scaler: 0.5 } },
+      });
+    });
+
+    // only positive
+    await assert.rejects(async () => {
+      await global.usnContract.set_adaptive_spread({
+        args: { params: { min: 0.001, max: 0.003, scaler: -0.4 } },
+      });
+    });
   });
 
   after(async () => {

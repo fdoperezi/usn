@@ -35,6 +35,7 @@ const GAS_FOR_RETURN_VALUE_PROMISE: Gas = Gas(5_000_000_000_000);
 
 const MAX_SPREAD: Balance = 50_000; // 0.05 = 5%
 const SPREAD_DECIMAL: u8 = 6;
+const SPREAD_MAX_SCALER: f64 = 0.4;
 
 #[derive(BorshStorageKey, BorshSerialize)]
 enum StorageKey {
@@ -556,9 +557,31 @@ impl Contract {
     pub fn set_adaptive_spread(&mut self, params: Option<ExponentialSpreadParams>) {
         self.assert_owner();
         self.abort_if_pause();
+
         self.spread = match params {
             None => Spread::Exponential(ExponentialSpreadParams::default()),
-            Some(params) => Spread::Exponential(params),
+            Some(params) => {
+                let max_spread = MAX_SPREAD as f64 / 10u64.pow(SPREAD_DECIMAL as u32) as f64;
+                if params.max < params.min {
+                    env::panic_str("params.min cannot be greater than params.max");
+                }
+                if params.min > max_spread {
+                    env::panic_str(&format!("params.min is greater than {}", max_spread));
+                }
+                if params.max > max_spread {
+                    env::panic_str(&format!("params.max is greater than {}", max_spread));
+                }
+                if params.scaler > SPREAD_MAX_SCALER {
+                    env::panic_str("params.scaler is greater than 1");
+                }
+                if params.min.is_sign_negative()
+                    || params.max.is_sign_negative()
+                    || params.scaler.is_sign_negative()
+                {
+                    env::panic_str("params cannot be negative");
+                }
+                Spread::Exponential(params)
+            }
         }
     }
 
@@ -1041,6 +1064,76 @@ mod tests {
         assert_eq!(contract.spread(Some(one_token.into())).0, 6000); // $1: 0.0060000 = 0.6%
         assert_eq!(contract.spread(Some(hundred_thousands.into())).0, 3472); // $1000: 0.003472 = 0.347%
         assert_eq!(contract.spread(Some(ten_mln.into())).0, 2000); // $10mln: 0.002000 = 021%
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_adaptive_spread_min_limit() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new(accounts(1));
+
+        contract.set_adaptive_spread(Some(ExponentialSpreadParams {
+            min: 0.06,
+            max: 0.001,
+            scaler: 0.00001,
+        }));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_adaptive_spread_max_limit() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new(accounts(1));
+
+        contract.set_adaptive_spread(Some(ExponentialSpreadParams {
+            min: 0.001,
+            max: 0.06,
+            scaler: 0.00001,
+        }));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_adaptive_spread_min_gt_max() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new(accounts(1));
+
+        contract.set_adaptive_spread(Some(ExponentialSpreadParams {
+            min: 0.002,
+            max: 0.001,
+            scaler: 0.00001,
+        }));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_adaptive_spread_scaler_limit() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new(accounts(1));
+
+        contract.set_adaptive_spread(Some(ExponentialSpreadParams {
+            min: 0.001,
+            max: 0.002,
+            scaler: 0.5,
+        }));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_adaptive_spread_negative_param() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new(accounts(1));
+
+        contract.set_adaptive_spread(Some(ExponentialSpreadParams {
+            min: -0.001,
+            max: -0.002,
+            scaler: 1.0,
+        }));
     }
 
     #[test]
