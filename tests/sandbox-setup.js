@@ -12,7 +12,8 @@ const config = {
   keyPath: '/tmp/near-usn-test-sandbox/validator_key.json',
   usnPath: './target/wasm32-unknown-unknown/sandbox/usn.wasm',
   priceoraclePath: './tests/priceoracle.wasm',
-  amount: new BN('10000000000000000000000000', 10), // 25 digits, 10 NEAR
+  priceoracleMultiplier: '111439',
+  amount: new BN('300000000000000000000000000', 10), // 26 digits, 300 NEAR
   masterId: 'test.near',
   usnId: 'usn.test.near',
   oracleId: 'priceoracle.test.near',
@@ -39,7 +40,8 @@ const usnMethods = {
     'add_to_blacklist',
     'remove_from_blacklist',
     'set_owner',
-    'set_spread',
+    'set_fixed_spread',
+    'set_adaptive_spread',
     'extend_guardians',
     'remove_guardians',
     'destroy_black_funds',
@@ -119,7 +121,7 @@ async function sandboxSetup() {
       prices: [
         {
           asset_id: 'wrap.test.near',
-          price: { multiplier: '111439', decimals: 28 },
+          price: { multiplier: config.priceoracleMultiplier, decimals: 28 },
         },
       ],
     },

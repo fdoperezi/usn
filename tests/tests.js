@@ -6,6 +6,7 @@ const BN = require('bn.js');
 
 const ONE_NEAR = '1000000000000000000000000';
 const ONE_YOCTO = '1';
+const HUNDRED_NEARS = '100000000000000000000000000';
 const GAS_FOR_CALL = '200000000000000'; // 200 TGas
 
 describe('Smoke Test', function () {
@@ -225,19 +226,19 @@ describe('User', async function () {
       amount: ONE_YOCTO,
       gas: GAS_FOR_CALL,
     });
-    assert.equal(near, '980198019801980198019801'); // 0.98 NEAR
+    assert.equal(near, '985050000000000000000000'); // 0.98 NEAR
   });
 
   // Issue: https://github.com/near/sandbox/issues/27
   it.skip('sells USN with slippage control', async () => {
     const near = await global.bobContract.sell({
       args: {
-        amount: '11018670423750000000',
+        amount: '11032461000000000000',
       },
       amount: ONE_YOCTO,
       gas: GAS_FOR_CALL,
     });
-    assert.equal(near, '978972772277227722772277'); // 0.97 NEAR
+    assert.equal(near, '985050000000000000000000'); // 0.97 NEAR
   });
 
   it('spends gas and gets the rest back in case of error', async () => {
@@ -289,7 +290,7 @@ describe('User', async function () {
         });
       },
       (err) => {
-        assert(err.message.includes('is not registered'));
+        assert.match(err.message, /The account doesn't have enough balance/);
         return true;
       }
     );
@@ -308,6 +309,118 @@ describe('User', async function () {
   after(async () => {
     await global.usnContract.remove_guardians({
       args: { guardians: [config.aliceId, config.bobId] },
+    });
+
+    const aliceBalance = await global.aliceContract.ft_balance_of({
+      account_id: config.aliceId,
+    });
+
+    const bobBalance = await global.bobContract.ft_balance_of({
+      account_id: config.bobId,
+    });
+
+    // Flush balances and force registration removal.
+
+    if (aliceBalance != '0') {
+      await global.aliceContract.ft_transfer({
+        args: {
+          receiver_id: 'any',
+          amount: aliceBalance,
+        },
+        amount: ONE_YOCTO,
+      });
+    }
+
+    if (bobBalance != '0') {
+      await global.bobContract.ft_transfer({
+        args: {
+          receiver_id: 'any',
+          amount: bobBalance,
+        },
+        amount: ONE_YOCTO,
+      });
+    }
+  });
+});
+
+describe('Adaptive Spread', async function () {
+  this.timeout(15000);
+
+  before(async () => {
+    await global.usnContract.extend_guardians({
+      args: { guardians: [config.aliceId] },
+    });
+  });
+
+  it('should be used to buy USN', async () => {
+    const amount = await global.aliceContract.buy({
+      args: {},
+      amount: HUNDRED_NEARS,
+      gas: GAS_FOR_CALL,
+    });
+    assert.equal(amount, '1108854824870000000000'); // ~$1108
+
+    const expected_amount = await global.aliceContract.ft_balance_of({
+      account_id: config.aliceId,
+    });
+    assert.equal(amount, expected_amount);
+  });
+
+  // Issue: https://github.com/near/sandbox/issues/27
+  it.skip('should be used to sell USN', async () => {
+    const near = await global.aliceContract.sell({
+      args: {
+        amount: '1108854824870000000000',
+      },
+      amount: ONE_YOCTO,
+      gas: GAS_FOR_CALL,
+    });
+    assert.equal(near, '99009067108900000000000000'); // 0.99 NEAR
+  });
+
+  after(async () => {
+    await global.usnContract.remove_guardians({
+      args: { guardians: [config.aliceId] },
+    });
+  });
+});
+
+describe('Fixed Spread', async function () {
+  this.timeout(15000);
+
+  before(async () => {
+    await global.usnContract.extend_guardians({
+      args: { guardians: [config.aliceId] },
+    });
+
+    await global.usnContract.set_fixed_spread({ args: { spread: '10000' } }); // 1%
+  });
+
+  it('should be used to buy USN', async () => {
+    const amount = await global.aliceContract.buy({
+      args: {},
+      amount: HUNDRED_NEARS,
+      gas: GAS_FOR_CALL,
+    });
+    assert.equal(amount, '1103246100000000000000'); // ~$1103
+  });
+
+  // Issue: https://github.com/near/sandbox/issues/27
+  it.skip('should be used to sell USN', async () => {
+    const near = await global.aliceContract.sell({
+      args: {
+        amount: '1103246100000000000000',
+      },
+      amount: ONE_YOCTO,
+      gas: GAS_FOR_CALL,
+    });
+    assert.equal(near, '98010000000000000000000000'); // 98.01 NEAR
+  });
+
+  after(async () => {
+    await global.usnContract.set_adaptive_spread({ args: {} });
+    await global.usnContract.remove_guardians({
+      args: { guardians: [config.aliceId] },
     });
   });
 });

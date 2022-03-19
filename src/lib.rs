@@ -997,10 +997,12 @@ mod tests {
         let mut contract = Contract::new(accounts(1));
 
         let one_token = 10u128.pow(contract.decimals() as u32);
+        let hundred_thousands = one_token * 100_000;
         let ten_mln = one_token * 10_000_000;
 
         contract.set_adaptive_spread();
         assert_eq!(contract.spread(Some(one_token.into())).0, 5000); // $1: 0.0050000 = 0.5%
+        assert_eq!(contract.spread(Some(hundred_thousands.into())).0, 2889); // $1000: 0.002889 = 0.289%
         assert_eq!(contract.spread(Some(ten_mln.into())).0, 1000); // $10mln: 0.001000 = 0.1%
     }
 
