@@ -77,6 +77,30 @@ pub struct ExpectedRate {
     pub decimals: u8,
 }
 
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct ExponentialSpreadParams {
+    pub min: f64,
+    pub max: f64,
+    pub scaler: f64,
+}
+
+impl Default for ExponentialSpreadParams {
+    fn default() -> Self {
+        Self {
+            min: 0.001,
+            max: 0.005,
+            scaler: 0.0000075,
+        }
+    }
+}
+
+#[derive(BorshDeserialize, BorshSerialize)]
+pub enum Spread {
+    Fixed(Balance),
+    Exponential(ExponentialSpreadParams),
+}
+
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
@@ -87,7 +111,7 @@ pub struct Contract {
     black_list: LookupMap<AccountId, BlackListStatus>,
     status: ContractStatus,
     oracle: Oracle,
-    spread: Option<Balance>,
+    spread: Spread,
 }
 
 const DATA_IMAGE_SVG_NEAR_ICON: &str =
@@ -222,7 +246,7 @@ impl Contract {
             black_list: LookupMap::new(StorageKey::Blacklist),
             status: ContractStatus::Working,
             oracle: Oracle::default(),
-            spread: None,
+            spread: Spread::Exponential(ExponentialSpreadParams::default()),
         };
 
         this.token.internal_deposit(&owner_id, NO_DEPOSIT);
@@ -496,9 +520,9 @@ impl Contract {
     }
 
     fn spread_u128(&self, amount: u128) -> u128 {
-        match self.spread {
-            Some(spread) => spread,
-            None => {
+        match &self.spread {
+            Spread::Fixed(spread) => *spread,
+            Spread::Exponential(params) => {
                 // C1(v) = CHV + (CLV - CHV) * e ^ {-s1 * amount}
                 //     CHV = 0.1%
                 //     CLV = 0.5%
@@ -509,8 +533,8 @@ impl Contract {
                 let decimals = 10u128.pow(self.decimals() as u32);
                 let n = amount / decimals; // [0, ...], dropping decimals
                 let amount: u128 = if n > 10_000_000 { 10_000_000 } else { n }; // [0, 10_000_000]
-                let exp = (-0.0000075 * amount as f64).exp();
-                let spread = 0.001 + (0.005 - 0.001) * exp;
+                let exp = (-params.scaler * amount as f64).exp();
+                let spread = params.min + (params.max - params.min) * exp;
                 (spread * (10u32.pow(SPREAD_DECIMAL as u32) as f64)).round() as u128
             }
         }
@@ -526,13 +550,16 @@ impl Contract {
                 MAX_SPREAD / 10u128.pow(SPREAD_DECIMAL as u32)
             ));
         }
-        self.spread = Some(spread);
+        self.spread = Spread::Fixed(spread);
     }
 
-    pub fn set_adaptive_spread(&mut self) {
+    pub fn set_adaptive_spread(&mut self, params: Option<ExponentialSpreadParams>) {
         self.assert_owner();
         self.abort_if_pause();
-        self.spread = None;
+        self.spread = match params {
+            None => Spread::Exponential(ExponentialSpreadParams::default()),
+            Some(params) => Spread::Exponential(params),
+        }
     }
 
     pub fn version(&self) -> String {
@@ -567,7 +594,8 @@ impl Contract {
             metadata: old.metadata,
             black_list: old.black_list,
             status: old.status,
-            spread: None, // This is a change: adaptive spread by default.
+            // This is a change: adaptive spread by default.
+            spread: Spread::Exponential(ExponentialSpreadParams::default()),
             oracle: old.oracle,
         }
     }
@@ -1000,7 +1028,7 @@ mod tests {
         let hundred_thousands = one_token * 100_000;
         let ten_mln = one_token * 10_000_000;
 
-        contract.set_adaptive_spread();
+        contract.set_adaptive_spread(None);
         assert_eq!(contract.spread(Some(one_token.into())).0, 5000); // $1: 0.0050000 = 0.5%
         assert_eq!(contract.spread(Some(hundred_thousands.into())).0, 2889); // $1000: 0.002889 = 0.289%
         assert_eq!(contract.spread(Some(ten_mln.into())).0, 1000); // $10mln: 0.001000 = 0.1%
