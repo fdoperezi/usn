@@ -1032,6 +1032,15 @@ mod tests {
         assert_eq!(contract.spread(Some(one_token.into())).0, 5000); // $1: 0.0050000 = 0.5%
         assert_eq!(contract.spread(Some(hundred_thousands.into())).0, 2889); // $1000: 0.002889 = 0.289%
         assert_eq!(contract.spread(Some(ten_mln.into())).0, 1000); // $10mln: 0.001000 = 0.1%
+
+        contract.set_adaptive_spread(Some(ExponentialSpreadParams {
+            min: 0.002,
+            max: 0.006,
+            scaler: 0.00001,
+        }));
+        assert_eq!(contract.spread(Some(one_token.into())).0, 6000); // $1: 0.0060000 = 0.6%
+        assert_eq!(contract.spread(Some(hundred_thousands.into())).0, 3472); // $1000: 0.003472 = 0.347%
+        assert_eq!(contract.spread(Some(ten_mln.into())).0, 2000); // $10mln: 0.002000 = 021%
     }
 
     #[test]

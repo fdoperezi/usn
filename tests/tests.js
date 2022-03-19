@@ -378,6 +378,19 @@ describe('Adaptive Spread', async function () {
     assert.equal(near, '99009067108900000000000000'); // 0.99 NEAR
   });
 
+  it('should be configurable', async () => {
+    await global.usnContract.set_adaptive_spread({
+      args: { params: { min: 0.002, max: 0.006, scaler: 0.0001 } },
+    });
+
+    const amount = await global.aliceContract.buy({
+      args: {},
+      amount: HUNDRED_NEARS,
+      gas: GAS_FOR_CALL,
+    });
+    assert.equal(amount, '1108173932580000000000'); // ~$1108
+  });
+
   after(async () => {
     await global.usnContract.remove_guardians({
       args: { guardians: [config.aliceId] },
