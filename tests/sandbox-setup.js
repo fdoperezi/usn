@@ -29,7 +29,7 @@ const usnMethods = {
     'decimals',
     'spread',
     'contract_status',
-    'get_owner',
+    'owner',
     'ft_balance_of',
   ],
   changeMethods: [

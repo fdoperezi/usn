@@ -20,7 +20,7 @@ impl Contract {
         self.owner_id = owner_id;
     }
 
-    pub fn get_owner(&self) -> AccountId {
+    pub fn owner(&self) -> AccountId {
         self.owner_id.clone()
     }
 

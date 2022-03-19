@@ -43,7 +43,7 @@ describe('Anyone', function () {
   });
 
   it('should get an owner', async () => {
-    const owner = await global.aliceContract.get_owner();
+    const owner = await global.aliceContract.owner();
     assert.equal(owner, config.usnId);
   });
 });
@@ -78,7 +78,7 @@ describe('Owner', function () {
     await global.usnContract.set_owner({
       args: { owner_id: config.aliceId },
     });
-    assert.equal(await global.usnContract.get_owner(), config.aliceId);
+    assert.equal(await global.usnContract.owner(), config.aliceId);
   });
 
   it('can change ownership', async () => {
@@ -91,7 +91,7 @@ describe('Owner', function () {
     await global.aliceContract.set_owner({
       args: { owner_id: config.usnId },
     });
-    assert.equal(await global.aliceContract.get_owner(), config.usnId);
+    assert.equal(await global.aliceContract.owner(), config.usnId);
   });
 });
 
