@@ -572,13 +572,14 @@ impl Contract {
                     env::panic_str(&format!("params.max is greater than {}", max_spread));
                 }
                 if params.scaler > SPREAD_MAX_SCALER {
-                    env::panic_str("params.scaler is greater than 1");
+                    #[rustfmt::skip]
+                    env::panic_str(&format!("params.scaler is greater than {}", SPREAD_MAX_SCALER));
                 }
                 if params.min.is_sign_negative()
                     || params.max.is_sign_negative()
                     || params.scaler.is_sign_negative()
                 {
-                    env::panic_str("params cannot be negative");
+                    env::panic_str("params.min, params.max, params.scaler cannot be negative");
                 }
                 Spread::Exponential(params)
             }
