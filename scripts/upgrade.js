@@ -19,7 +19,9 @@ const methods = {
 
 (async function () {
   const keyFile = require(config.keyPath);
-  const privKey = nearAPI.utils.KeyPair.fromString(keyFile.secret_key);
+  const privKey = nearAPI.utils.KeyPair.fromString(
+    keyFile.secret_key || keyFile.private_key
+  );
 
   const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
   keyStore.setKey(config.networkId, config.accountId, privKey);
