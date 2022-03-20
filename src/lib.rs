@@ -256,7 +256,6 @@ impl Contract {
 
     pub fn upgrade_name_symbol(&mut self, name: String, symbol: String) {
         self.assert_owner();
-        self.abort_if_pause();
         let metadata = self.metadata.take();
         if let Some(mut metadata) = metadata {
             metadata.name = name;
@@ -267,7 +266,6 @@ impl Contract {
 
     pub fn upgrade_icon(&mut self, data: String) {
         self.assert_owner();
-        self.abort_if_pause();
         let metadata = self.metadata.take();
         if let Some(mut metadata) = metadata {
             metadata.icon = Some(data);
@@ -284,20 +282,17 @@ impl Contract {
 
     pub fn add_to_blacklist(&mut self, account_id: &AccountId) {
         self.assert_owner();
-        self.abort_if_pause();
         self.black_list.insert(account_id, &BlackListStatus::Banned);
     }
 
     pub fn remove_from_blacklist(&mut self, account_id: &AccountId) {
         self.assert_owner();
-        self.abort_if_pause();
         self.black_list
             .insert(account_id, &BlackListStatus::Allowable);
     }
 
     pub fn destroy_black_funds(&mut self, account_id: &AccountId) {
         self.assert_owner();
-        self.abort_if_pause();
         assert_eq!(self.blacklist_status(&account_id), BlackListStatus::Banned);
         let black_balance = self.ft_balance_of(account_id.clone());
         if black_balance.0 <= 0 {
@@ -543,7 +538,6 @@ impl Contract {
 
     pub fn set_fixed_spread(&mut self, spread: U128) {
         self.assert_owner();
-        self.abort_if_pause();
         let spread = Balance::from(spread);
         if spread > MAX_SPREAD {
             env::panic_str(&format!(
@@ -556,7 +550,6 @@ impl Contract {
 
     pub fn set_adaptive_spread(&mut self, params: Option<ExponentialSpreadParams>) {
         self.assert_owner();
-        self.abort_if_pause();
 
         self.spread = match params {
             None => Spread::Exponential(ExponentialSpreadParams::default()),
