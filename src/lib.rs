@@ -594,7 +594,7 @@ impl Contract {
         struct ContractV015 {
             owner_id: AccountId,
             guardians: UnorderedSet<AccountId>,
-            token: FungibleTokenFreeStorage,
+            token: FungibleTokenFreeStorage, // backward compatible
             metadata: LazyOption<FungibleTokenMetadata>,
             black_list: LookupMap<AccountId, BlackListStatus>,
             status: ContractStatus,

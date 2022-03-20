@@ -1,7 +1,7 @@
 use crate::*;
 use near_contract_standards::fungible_token::core_impl::ext_fungible_token_receiver;
 use near_contract_standards::fungible_token::events::FtTransfer;
-use near_sdk::{log, require, IntoStorageKey, PromiseResult};
+use near_sdk::{log, require, IntoStorageKey, PromiseResult, StorageUsage};
 
 const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas(5_000_000_000_000);
 const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas(25_000_000_000_000 + GAS_FOR_RESOLVE_TRANSFER.0);
@@ -35,7 +35,7 @@ pub struct FungibleTokenFreeStorage {
 
     /// DEPRECATED. Kept to match state without upgradability.
     /// Previously the maximum storage size of one account.
-    pub _unused: Balance,
+    pub _unused: StorageUsage,
 }
 
 impl FungibleTokenFreeStorage {
