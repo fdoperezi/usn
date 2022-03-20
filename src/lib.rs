@@ -590,31 +590,8 @@ impl Contract {
     #[init(ignore_state)]
     #[private]
     pub fn migrate() -> Self {
-        #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
-        struct ContractV015 {
-            owner_id: AccountId,
-            guardians: UnorderedSet<AccountId>,
-            token: FungibleTokenFreeStorage, // backward compatible
-            metadata: LazyOption<FungibleTokenMetadata>,
-            black_list: LookupMap<AccountId, BlackListStatus>,
-            status: ContractStatus,
-            oracle: Oracle,
-            spread: Balance,
-        }
-
-        let old: ContractV015 = env::state_read().expect("Contract is not initialized");
-
-        Self {
-            owner_id: old.owner_id,
-            guardians: old.guardians,
-            token: old.token,
-            metadata: old.metadata,
-            black_list: old.black_list,
-            status: old.status,
-            // This is a change: adaptive spread by default.
-            spread: Spread::Exponential(ExponentialSpreadParams::default()),
-            oracle: old.oracle,
-        }
+        let contract: Contract = env::state_read().expect("Contract is not initialized");
+        contract
     }
 
     fn abort_if_pause(&self) {
