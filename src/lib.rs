@@ -328,8 +328,6 @@ impl Contract {
     ///     want to return a promise in the middle.
     #[payable]
     pub fn buy(&mut self, expected: Option<ExpectedRate>, to: Option<AccountId>) {
-        // TODO: Should regular people be able to buy?
-        self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
 
@@ -408,8 +406,6 @@ impl Contract {
     #[payable]
     pub fn sell(&mut self, amount: U128, expected: Option<ExpectedRate>) -> Promise {
         assert_one_yocto();
-        // TODO: Ditto
-        self.assert_owner_or_guardian();
         self.abort_if_pause();
         self.abort_if_blacklisted();
 
@@ -903,22 +899,11 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_cannot_buy_sell() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = Contract::new(accounts(1));
-        testing_env!(context.predecessor_account_id(accounts(2)).build());
-        contract.buy(None, None);
-    }
-
-    #[test]
     fn test_buy_sell() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
 
         let mut contract = Contract::new(accounts(1));
-        contract.extend_guardians(vec![accounts(2)]);
 
         testing_env!(context.predecessor_account_id(accounts(2)).build());
 
@@ -950,7 +935,6 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = Contract::new(accounts(1));
-        contract.extend_guardians(vec![accounts(2)]);
 
         testing_env!(context.predecessor_account_id(accounts(2)).build());
 
@@ -968,7 +952,7 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = Contract::new(accounts(1));
-        contract.extend_guardians(vec![accounts(2)]);
+
         contract.add_to_blacklist(&accounts(2)); // It'll cause panic on buy.
 
         testing_env!(context.predecessor_account_id(accounts(2)).build());
@@ -987,7 +971,7 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = Contract::new(accounts(1));
-        contract.extend_guardians(vec![accounts(2)]);
+
         contract.add_to_blacklist(&accounts(2)); // It'll cause panic on sell.
 
         testing_env!(context.predecessor_account_id(accounts(2)).build());

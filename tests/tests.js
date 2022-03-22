@@ -127,12 +127,6 @@ describe('Guardian', function () {
 describe('User', async function () {
   this.timeout(15000);
 
-  before(async () => {
-    await global.usnContract.extend_guardians({
-      args: { guardians: [config.aliceId, config.bobId] },
-    });
-  });
-
   it('should NOT sell before buying', async () => {
     await assert.rejects(async () => {
       await global.aliceContract.sell({ args: { amount: 1 } });
@@ -307,10 +301,6 @@ describe('User', async function () {
   });
 
   after(async () => {
-    await global.usnContract.remove_guardians({
-      args: { guardians: [config.aliceId, config.bobId] },
-    });
-
     const aliceBalance = await global.aliceContract.ft_balance_of({
       account_id: config.aliceId,
     });
@@ -345,12 +335,6 @@ describe('User', async function () {
 
 describe('Adaptive Spread', async function () {
   this.timeout(15000);
-
-  before(async () => {
-    await global.usnContract.extend_guardians({
-      args: { guardians: [config.aliceId] },
-    });
-  });
 
   it('should be used to buy USN', async () => {
     const amount = await global.aliceContract.buy({
@@ -427,22 +411,12 @@ describe('Adaptive Spread', async function () {
       });
     });
   });
-
-  after(async () => {
-    await global.usnContract.remove_guardians({
-      args: { guardians: [config.aliceId] },
-    });
-  });
 });
 
 describe('Fixed Spread', async function () {
   this.timeout(15000);
 
   before(async () => {
-    await global.usnContract.extend_guardians({
-      args: { guardians: [config.aliceId] },
-    });
-
     await global.usnContract.set_fixed_spread({ args: { spread: '10000' } }); // 1%
   });
 
@@ -469,8 +443,5 @@ describe('Fixed Spread', async function () {
 
   after(async () => {
     await global.usnContract.set_adaptive_spread({ args: {} });
-    await global.usnContract.remove_guardians({
-      args: { guardians: [config.aliceId] },
-    });
   });
 });
