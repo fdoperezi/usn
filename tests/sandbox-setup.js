@@ -31,6 +31,7 @@ const usnMethods = {
     'contract_status',
     'owner',
     'ft_balance_of',
+    'storage_balance_of',
   ],
   changeMethods: [
     'new',
@@ -50,8 +51,6 @@ const usnMethods = {
     'buy',
     'sell',
     'ft_transfer',
-    'storage_deposit',
-    'storage_unregister'
   ],
 };
 
@@ -100,7 +99,11 @@ async function sandboxSetup() {
   await usnAccount.deployContract(wasm);
 
   // Initialize the contract.
-  const usnContract = new nearAPI.Contract(usnAccount, config.usnId, usnMethods);
+  const usnContract = new nearAPI.Contract(
+    usnAccount,
+    config.usnId,
+    usnMethods
+  );
   await usnContract.new({ args: { owner_id: config.usnId } });
 
   // Deploy the priceoracle contract.
@@ -130,8 +133,16 @@ async function sandboxSetup() {
   // Initialize other accounts connected to the contract for all test cases.
   const aliceAccount = new nearAPI.Account(near.connection, config.aliceId);
   const bobAccount = new nearAPI.Account(near.connection, config.bobId);
-  const aliceContract = new nearAPI.Contract(aliceAccount, config.usnId, usnMethods);
-  const bobContract = new nearAPI.Contract(bobAccount, config.usnId, usnMethods);
+  const aliceContract = new nearAPI.Contract(
+    aliceAccount,
+    config.usnId,
+    usnMethods
+  );
+  const bobContract = new nearAPI.Contract(
+    bobAccount,
+    config.usnId,
+    usnMethods
+  );
 
   // Setup a global test context.
   global.usnAccount = usnAccount;

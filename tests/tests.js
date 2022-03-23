@@ -46,6 +46,16 @@ describe('Anyone', function () {
     const owner = await global.aliceContract.owner();
     assert.equal(owner, config.usnId);
   });
+
+  it('should get a fake storage balance', async () => {
+    const storage_balance = await global.aliceContract.storage_balance_of({
+      account_id: 'fake.near',
+    });
+    assert.deepEqual(storage_balance, {
+      total: '1250000000000000000000',
+      available: '0',
+    });
+  });
 });
 
 describe('Owner', function () {

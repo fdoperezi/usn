@@ -188,6 +188,15 @@ pub fn ft_balance_of(&self, account_id: AccountId) -> U128;
 pub fn ft_metadata(&self) -> FungibleTokenMetadata;
 ```
 
+## NEP-145: partial storage API
+
+Always returns 125 milliNEAR indicating that user doesn't need to be registered
+with `storage_deposit`.
+
+```rust
+pub fn storage_balance_of(&self, account_id: AccountId) -> Option<StorageBalance>;
+```
+
 ## Constructor
 
 ```rust

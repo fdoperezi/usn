@@ -2,6 +2,7 @@ mod event;
 mod ft;
 mod oracle;
 mod owner;
+mod storage;
 
 use near_contract_standards::fungible_token::core::FungibleTokenCore;
 use near_contract_standards::fungible_token::metadata::{
