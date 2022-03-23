@@ -5,6 +5,7 @@
 USN is a NEAR-native USD stable coin.
 
 The contract implements fungible token API according to the following standards:
+
 1. [NEP-141](https://nomicon.io/Standards/FungibleToken/Core) (ERC-20 fashioned)
 2. [NEP-148](https://nomicon.io/Standards/FungibleToken/Metadata)
 3. [Fungible Token Event](https://nomicon.io/Standards/FungibleToken/Event)
@@ -13,19 +14,21 @@ The specific part of the USN contract is `buy`/`sell` methods of NEAR/USD exchan
 
 # Contract Address
 
-| Mainnet  | Testnet      |
-|----------|--------------|
-| usn      | usdn.testnet |
+| Mainnet | Testnet      |
+| ------- | ------------ |
+| usn     | usdn.testnet |
 
 # How It Works
 
 ## Buy USN for NEAR
-*Method:* `buy`
+
+_Method:_ `buy`
 
 <img alt="Buy USN" src="images/buy.svg" />
 
 ## Sell USN for NEAR with `sell` API
-*Method:* `sell`
+
+_Method:_ `sell`
 
 <img alt="Sell USN" src="images/sell.svg" />
 
@@ -36,39 +39,49 @@ Methods `buy` and `sell` requires the _expected_ exchange rate to avoid slippage
 # Build
 
 First, install prerequisites:
+
 ```bash
 npm install
 ```
+
 Then, build.
 
 For local sandbox:
+
 ```bash
 npm run build
 ```
 
 For testnet:
+
 ```bash
 npm run build:testnet
 ```
 
 For mainnet:
+
 ```bash
 npm run build:mainnet
 ```
+
 **WARNING**: There is a difference in each target. The crucial difference is that they communicate with different oracle addresses:
-* Mainnet: `priceoracle.near`
-* Testnet: `priceoracle.testnet`
-* Sandbox: `priceoracle.test.near`
+
+- Mainnet: `priceoracle.near`
+- Testnet: `priceoracle.testnet`
+- Sandbox: `priceoracle.test.near`
 
 And all these oracle contracts report prices with different asset names.
 
 # Test
+
 ## Run unit tests
+
 ```bash
 cargo test
 ```
 
 ## Run integration tests
+
 ```bash
 npm run build
 npm run deploy
@@ -76,15 +89,21 @@ npm run test
 ```
 
 ## Manual testing on the Testnet
+
 Build
+
 ```bash
 npm run build:testnet
 ```
+
 Deploy
+
 ```bash
 near deploy --force --wasmFile target/wasm32-unknown-unknown/testnet/usn.wasm --accountId=usdn.testnet --masterAccount=usdn.testnet
 ```
+
 Init once
+
 ```bash
 near call usdn.testnet new --args '{"owner_id": "usdn.testnet"}' --accountId=usdn.testnet
 ```
@@ -115,9 +134,88 @@ near call usdn.testnet buy --args '{"to": "bob.testnet"}' --accountId alice.test
 ```
 
 # DAO
+
 ## Upgrade the contract via Upgrade Proposal
+
 1. Download `usn.mainnet.wasm` from https://github.com/binary-star-near/usn/releases
 2. Create an upgrade proposal:
    ```bash
    sputnikdao proposal upgrade usn.mainnet.wasm usn --daoAcc usn --accountId alice.near --network mainnet
    ```
+
+# API
+
+## Buy/sell USN
+
+Send NEAR, receive USN.
+
+```rust
+pub fn buy(&mut self, expected: Option<ExpectedRate>, to: Option<AccountId>);
+```
+
+Send USN, receive NEAR.
+
+```rust
+pub fn sell(&mut self, amount: U128, expected: Option<ExpectedRate>) -> Promise;
+```
+
+## View methods
+
+```rust
+pub fn contract_status(&self) -> ContractStatus;
+pub fn name(&self) -> String;
+pub fn symbol(&self) -> String;
+pub fn decimals(&self) -> u8;
+pub fn spread(&self, amount: Option<U128>) -> U128;
+pub fn version(&self) -> String;
+pub fn blacklist_status(&self, account_id: &AccountId) -> BlackListStatus;
+pub fn owner(&self);
+```
+
+## NEP-141 (ERC-20)
+
+```rust
+pub fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>);
+pub fn ft_transfer_call(
+        &mut self,
+        receiver_id: AccountId,
+        amount: U128,
+        memo: Option<String>,
+        msg: String,
+    ) -> PromiseOrValue<U128>;
+pub fn ft_total_supply(&self) -> U128;
+pub fn ft_balance_of(&self, account_id: AccountId) -> U128;
+pub fn ft_metadata(&self) -> FungibleTokenMetadata;
+```
+
+## Constructor
+
+```rust
+pub fn new(owner_id: AccountId) -> Self;
+```
+
+## Private setters
+
+For owner only.
+
+```rust
+pub fn upgrade_name_symbol(&mut self, name: String, symbol: String);
+pub fn upgrade_icon(&mut self, data: String);
+pub fn add_to_blacklist(&mut self, account_id: &AccountId);
+pub fn remove_from_blacklist(&mut self, account_id: &AccountId);
+pub fn destroy_black_funds(&mut self, account_id: &AccountId);
+pub fn pause(&mut self);
+pub fn resume(&mut self);
+pub fn set_fixed_spread(&mut self, spread: U128) {
+pub fn set_adaptive_spread(&mut self, params: Option<ExponentialSpreadParams>);
+pub fn set_owner(&mut self, owner_id: AccountId);
+pub fn extend_guardians(&mut self, guardians: Vec<AccountId>);
+pub fn remove_guardians(&mut self, guardians: Vec<AccountId>);
+```
+
+## Upgradability
+
+```rust
+pub fn upgrade();
+pub fn migrate() -> Self;
+```
