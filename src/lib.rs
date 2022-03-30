@@ -103,6 +103,14 @@ pub enum Spread {
     Exponential(ExponentialSpreadParams),
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(crate = "near_sdk::serde")]
+#[cfg_attr(test, derive(Debug, PartialEq))]
+pub struct MintedBurnedSupply {
+    pub minted: U128,
+    pub burned: U128,
+}
+
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
@@ -295,16 +303,9 @@ impl Contract {
     pub fn destroy_black_funds(&mut self, account_id: &AccountId) {
         self.assert_owner();
         assert_eq!(self.blacklist_status(&account_id), BlackListStatus::Banned);
-        let black_balance = self.ft_balance_of(account_id.clone());
-        if black_balance.0 <= 0 {
-            env::panic_str("The account doesn't have enough balance");
-        }
-        self.token.accounts.insert(account_id, &0u128);
-        self.token.total_supply = self
-            .token
-            .total_supply
-            .checked_sub(u128::from(black_balance))
-            .expect("Failed to decrease total supply");
+        let black_balance: u128 = self.ft_balance_of(account_id.clone()).into();
+        self.token.internal_burn(account_id, black_balance);
+        event::emit::ft_mint(account_id, black_balance, None);
     }
 
     /// Pauses the contract. Only can be called by owner or guardians.
@@ -481,6 +482,43 @@ impl Contract {
                 multiplier,
                 slippage
             ));
+        }
+    }
+
+    pub fn mint(&mut self, amount: U128) {
+        self.assert_owner();
+        self.token
+            .internal_mint(&env::current_account_id(), amount.into());
+        event::emit::ft_mint(&env::current_account_id(), amount.into(), None);
+    }
+
+    pub fn mint_call(
+        &mut self,
+        receiver_id: AccountId,
+        amount: U128,
+        msg: String,
+    ) -> PromiseOrValue<U128> {
+        self.mint(amount);
+        self.token.internal_transfer_call(
+            &env::current_account_id(),
+            &receiver_id,
+            amount.into(),
+            None,
+            msg,
+        )
+    }
+
+    pub fn burn(&mut self, amount: U128) {
+        self.assert_owner();
+        self.token
+            .internal_burn(&env::current_account_id(), amount.into());
+        event::emit::ft_burn(&env::current_account_id(), amount.into(), None);
+    }
+
+    pub fn minted(&self) -> MintedBurnedSupply {
+        MintedBurnedSupply {
+            minted: self.token.minted_supply.into(),
+            burned: self.token.burned_supply.into(),
         }
     }
 
@@ -1147,6 +1185,58 @@ mod tests {
             11032461000000_000000000000000000,
             Some(expected_rate),
             fresh_rate,
+        );
+    }
+
+    #[test]
+    fn test_mint_burn() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+
+        let mut contract = Contract::new(accounts(2));
+
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
+
+        let hundred = U128::from(100000000000000000000);
+        let two_hundred = U128::from(200000000000000000000);
+
+        contract.mint(hundred);
+
+        assert_eq!(contract.ft_balance_of(accounts(0)), hundred);
+        assert_eq!(
+            contract.minted(),
+            MintedBurnedSupply {
+                minted: hundred,
+                burned: U128::from(0)
+            }
+        );
+
+        contract.mint_call(accounts(1), hundred, String::from(""));
+        assert_eq!(contract.ft_balance_of(accounts(0)), hundred);
+        assert_eq!(contract.ft_balance_of(accounts(1)), hundred);
+        assert_eq!(
+            contract.minted(),
+            MintedBurnedSupply {
+                minted: two_hundred,
+                burned: U128::from(0)
+            }
+        );
+
+        contract
+            .token
+            .internal_transfer(&accounts(1), &accounts(0), hundred.into(), None);
+        contract
+            .token
+            .internal_deposit(&accounts(2), two_hundred.into());
+        contract.burn(two_hundred);
+        contract.add_to_blacklist(&accounts(2));
+        contract.destroy_black_funds(&accounts(2));
+        assert_eq!(
+            contract.minted(),
+            MintedBurnedSupply {
+                minted: U128::from(0),
+                burned: two_hundred
+            }
         );
     }
 }
