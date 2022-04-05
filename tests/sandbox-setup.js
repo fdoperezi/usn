@@ -11,7 +11,7 @@ const config = {
   nodeUrl: 'http://0.0.0.0:3030',
   keyPath: '/tmp/near-usn-test-sandbox/validator_key.json',
   usnPath: './target/wasm32-unknown-unknown/sandbox/usn.wasm',
-  priceoraclePath: './tests/priceoracle.wasm',
+  priceoraclePath: './tests/price_oracle.wasm',
   priceoracleMultiplier: '111439',
   amount: new BN('300000000000000000000000000', 10), // 26 digits, 300 NEAR
   masterId: 'test.near',
@@ -55,7 +55,7 @@ const usnMethods = {
 };
 
 const oracleMethods = {
-  changeMethods: ['new', 'add_asset', 'report_prices'],
+  changeMethods: ['new', 'add_asset', 'add_oracle', 'report_prices'],
 };
 
 async function sandboxSetup() {
@@ -118,6 +118,7 @@ async function sandboxSetup() {
     oracleMethods
   );
   await oracleContract.new({ args: { recency_duration_sec: 360 } });
+  await oracleContract.add_oracle({ args: { account_id: config.oracleId } });
   await oracleContract.add_asset({ args: { asset_id: 'wrap.test.near' } });
   await oracleContract.report_prices({
     args: {
