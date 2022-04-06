@@ -486,13 +486,6 @@ impl Contract {
         }
     }
 
-    pub fn burn(&mut self, amount: U128) {
-        self.assert_owner();
-        self.token
-            .internal_burn(&env::current_account_id(), amount.into());
-        event::emit::ft_burn(&env::current_account_id(), amount.into(), None);
-    }
-
     pub fn minted(&self) -> MintedBurnedSupply {
         MintedBurnedSupply {
             minted: self.token.minted_supply.into(),
