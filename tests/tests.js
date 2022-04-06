@@ -221,7 +221,6 @@ describe('User', async function () {
     );
   });
 
-  // Issue: https://github.com/near/sandbox/issues/27
   it('sells USN with the current exchange rate', async () => {
     const near = await global.aliceContract.sell({
       args: {
@@ -233,7 +232,6 @@ describe('User', async function () {
     assert.equal(near, '985050000000000000000000'); // 0.98 NEAR
   });
 
-  // Issue: https://github.com/near/sandbox/issues/27
   it('sells USN with slippage control', async () => {
     const near = await global.bobContract.sell({
       args: {
@@ -360,7 +358,6 @@ describe('Adaptive Spread', async function () {
     assert.equal(amount, expected_amount);
   });
 
-  // Issue: https://github.com/near/sandbox/issues/27
   it('should be used to sell USN', async () => {
     const near = await global.aliceContract.sell({
       args: {
@@ -439,7 +436,6 @@ describe('Fixed Spread', async function () {
     assert.equal(amount, '1103246100000000000000'); // ~$1103
   });
 
-  // Issue: https://github.com/near/sandbox/issues/27
   it('should be used to sell USN', async () => {
     const near = await global.aliceContract.sell({
       args: {
