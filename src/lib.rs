@@ -2,6 +2,7 @@ mod event;
 mod ft;
 mod oracle;
 mod owner;
+mod pool;
 mod storage;
 
 use near_contract_standards::fungible_token::core::FungibleTokenCore;
@@ -483,29 +484,6 @@ impl Contract {
                 slippage
             ));
         }
-    }
-
-    pub fn mint(&mut self, amount: U128) {
-        self.assert_owner();
-        self.token
-            .internal_mint(&env::current_account_id(), amount.into());
-        event::emit::ft_mint(&env::current_account_id(), amount.into(), None);
-    }
-
-    pub fn mint_call(
-        &mut self,
-        receiver_id: AccountId,
-        amount: U128,
-        msg: String,
-    ) -> PromiseOrValue<U128> {
-        self.mint(amount);
-        self.token.internal_transfer_call(
-            &env::current_account_id(),
-            &receiver_id,
-            amount.into(),
-            None,
-            msg,
-        )
     }
 
     pub fn burn(&mut self, amount: U128) {
@@ -1185,58 +1163,6 @@ mod tests {
             11032461000000_000000000000000000,
             Some(expected_rate),
             fresh_rate,
-        );
-    }
-
-    #[test]
-    fn test_mint_burn() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-
-        let mut contract = Contract::new(accounts(2));
-
-        testing_env!(context.predecessor_account_id(accounts(2)).build());
-
-        let hundred = U128::from(100000000000000000000);
-        let two_hundred = U128::from(200000000000000000000);
-
-        contract.mint(hundred);
-
-        assert_eq!(contract.ft_balance_of(accounts(0)), hundred);
-        assert_eq!(
-            contract.minted(),
-            MintedBurnedSupply {
-                minted: hundred,
-                burned: U128::from(0)
-            }
-        );
-
-        contract.mint_call(accounts(1), hundred, String::from(""));
-        assert_eq!(contract.ft_balance_of(accounts(0)), hundred);
-        assert_eq!(contract.ft_balance_of(accounts(1)), hundred);
-        assert_eq!(
-            contract.minted(),
-            MintedBurnedSupply {
-                minted: two_hundred,
-                burned: U128::from(0)
-            }
-        );
-
-        contract
-            .token
-            .internal_transfer(&accounts(1), &accounts(0), hundred.into(), None);
-        contract
-            .token
-            .internal_deposit(&accounts(2), two_hundred.into());
-        contract.burn(two_hundred);
-        contract.add_to_blacklist(&accounts(2));
-        contract.destroy_black_funds(&accounts(2));
-        assert_eq!(
-            contract.minted(),
-            MintedBurnedSupply {
-                minted: U128::from(0),
-                burned: two_hundred
-            }
         );
     }
 }

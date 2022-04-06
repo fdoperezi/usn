@@ -11,11 +11,15 @@ const config = {
   nodeUrl: 'http://0.0.0.0:3030',
   keyPath: '/tmp/near-usn-test-sandbox/validator_key.json',
   usnPath: './target/wasm32-unknown-unknown/sandbox/usn.wasm',
+  usdtPath: './tests/test_token.wasm',
+  refPath: './tests/ref_exchange.wasm',
   priceoraclePath: './tests/price_oracle.wasm',
   priceoracleMultiplier: '111439',
   amount: new BN('300000000000000000000000000', 10), // 26 digits, 300 NEAR
   masterId: 'test.near',
   usnId: 'usn.test.near',
+  usdtId: 'usdt.test.near',
+  refId: 'ref.test.near',
   oracleId: 'priceoracle.test.near',
   aliceId: 'alice.test.near',
   bobId: 'bob.test.near',
@@ -51,11 +55,25 @@ const usnMethods = {
     'buy',
     'sell',
     'ft_transfer',
+    'transfer_stable_liquidity',
   ],
 };
 
 const oracleMethods = {
   changeMethods: ['new', 'add_asset', 'add_oracle', 'report_prices'],
+};
+
+const usdtMethods = {
+  changeMethods: ['new', 'mint'],
+};
+
+const refMethods = {
+  changeMethods: [
+    'new',
+    'storage_deposit',
+    'register_tokens',
+    'add_stable_swap_pool',
+  ],
 };
 
 async function sandboxSetup() {
@@ -85,10 +103,14 @@ async function sandboxSetup() {
 
   // Create test accounts.
   await masterAccount.createAccount(config.usnId, pubKey, config.amount);
+  await masterAccount.createAccount(config.usdtId, pubKey, config.amount);
+  await masterAccount.createAccount(config.refId, pubKey, config.amount);
   await masterAccount.createAccount(config.oracleId, pubKey, config.amount);
   await masterAccount.createAccount(config.aliceId, pubKey, config.amount);
   await masterAccount.createAccount(config.bobId, pubKey, config.amount);
   keyStore.setKey(config.networkId, config.usnId, privKey);
+  keyStore.setKey(config.networkId, config.usdtId, privKey);
+  keyStore.setKey(config.networkId, config.refId, privKey);
   keyStore.setKey(config.networkId, config.oracleId, privKey);
   keyStore.setKey(config.networkId, config.aliceId, privKey);
   keyStore.setKey(config.networkId, config.bobId, privKey);
@@ -105,6 +127,56 @@ async function sandboxSetup() {
     usnMethods
   );
   await usnContract.new({ args: { owner_id: config.usnId } });
+
+  // Deploy USDT contract.
+  const wasmUsdt = await fs.readFile(config.usdtPath);
+  const usdtAccount = new nearAPI.Account(near.connection, config.usdtId);
+  await usdtAccount.deployContract(wasmUsdt);
+
+  // Initialize USDT contract.
+  const usdtContract = new nearAPI.Contract(
+    usdtAccount,
+    config.usdtId,
+    usdtMethods
+  );
+  await usdtContract.new({ args: {} });
+  await usdtContract.mint({
+    args: { account_id: config.usnId, amount: '1000000000000' }, // 1 mln. USDT
+  });
+  await usdtContract.mint({
+    args: { account_id: config.refId, amount: '1000000' }, // 1 USDT
+  });
+
+  // Deploy Ref.Finance (ref-exchange) contract.
+  const wasmRef = await fs.readFile(config.refPath);
+  const refAccount = new nearAPI.Account(near.connection, config.refId);
+  await refAccount.deployContract(wasmRef);
+
+  // Initialize Ref.Finance contract.
+  const refContract = new nearAPI.Contract(
+    refAccount,
+    config.refId,
+    refMethods
+  );
+  await refContract.new({
+    args: { owner_id: config.refId, exchange_fee: 1600, referral_fee: 400 },
+  });
+
+  const usnRef = new nearAPI.Contract(usnAccount, config.refId, refMethods);
+  await usnRef.storage_deposit({ args: {}, amount: '100000000000000000000000' });
+  await usnRef.register_tokens({
+    args: { token_ids: [config.usdtId, config.usnId] },
+    amount: '1',
+  });
+  await refContract.add_stable_swap_pool({
+    args: {
+      tokens: [config.usdtId, config.usnId],
+      decimals: [6, 18],
+      fee: 25,
+      amp_factor: 240,
+    },
+    amount: '3540000000000000000000',
+  });
 
   // Deploy the priceoracle contract.
   const wasmPriceoracle = await fs.readFile(config.priceoraclePath);
@@ -148,6 +220,8 @@ async function sandboxSetup() {
   // Setup a global test context.
   global.usnAccount = usnAccount;
   global.usnContract = usnContract;
+  global.usdtContract = usdtContract;
+  global.refContract = refContract;
   global.priceoracleContract = oracleContract;
   global.aliceAccount = aliceAccount;
   global.aliceContract = aliceContract;
@@ -172,7 +246,7 @@ module.exports = { config, sandboxSetup, sandboxTeardown };
 
 module.exports.mochaHooks = {
   beforeAll: async function () {
-    this.timeout(30000);
+    this.timeout(60000);
     await sandboxSetup();
   },
   afterAll: async function () {

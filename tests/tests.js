@@ -2,7 +2,6 @@
 
 const assert = require('assert').strict;
 const config = require('./sandbox-setup').config;
-const BN = require('bn.js');
 
 const ONE_NEAR = '1000000000000000000000000';
 const ONE_YOCTO = '1';
@@ -449,5 +448,19 @@ describe('Fixed Spread', async function () {
 
   after(async () => {
     await global.usnContract.set_adaptive_spread({ args: {} });
+  });
+});
+
+describe('Stable Pool (USDT/USN)', async function () {
+  this.timeout(10000);
+
+  it('should be initialized with a single call', async () => {
+    await assert.doesNotReject(async () => {
+      await global.usnContract.transfer_stable_liquidity({
+        args: { whole_amount: '1000000' },
+        amount: "780000000000000000001",
+        gas: GAS_FOR_CALL,
+      });
+    });
   });
 });

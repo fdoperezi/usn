@@ -141,13 +141,11 @@ impl FungibleTokenFreeStorage {
         sender_id: &AccountId,
         receiver_id: &AccountId,
         amount: Balance,
+        gas: Gas,
         memo: Option<String>,
         msg: String,
-    ) -> PromiseOrValue<U128> {
-        require!(
-            env::prepaid_gas() > GAS_FOR_FT_TRANSFER_CALL + GAS_FOR_RESOLVE_TRANSFER,
-            "More gas is required"
-        );
+    ) -> Promise {
+        require!(gas > GAS_FOR_FT_TRANSFER_CALL, "More gas is required");
         self.internal_transfer(sender_id, receiver_id, amount, memo);
         // Initiating receiver's call and the callback
         ext_fungible_token_receiver::ft_on_transfer(
@@ -156,7 +154,7 @@ impl FungibleTokenFreeStorage {
             msg,
             receiver_id.clone(),
             NO_DEPOSIT,
-            env::prepaid_gas() - GAS_FOR_FT_TRANSFER_CALL,
+            gas - GAS_FOR_FT_TRANSFER_CALL,
         )
         .then(ext_ft_self::ft_resolve_transfer(
             sender_id.clone(),
@@ -166,7 +164,6 @@ impl FungibleTokenFreeStorage {
             NO_DEPOSIT,
             GAS_FOR_RESOLVE_TRANSFER,
         ))
-        .into()
     }
 }
 
@@ -187,7 +184,9 @@ impl FungibleTokenCore for FungibleTokenFreeStorage {
     ) -> PromiseOrValue<U128> {
         assert_one_yocto();
         let sender_id = env::predecessor_account_id();
-        self.internal_transfer_call(&sender_id, &receiver_id, amount.into(), memo, msg)
+        let gas = env::prepaid_gas();
+        self.internal_transfer_call(&sender_id, &receiver_id, amount.into(), gas, memo, msg)
+            .into()
     }
 
     fn ft_total_supply(&self) -> U128 {
