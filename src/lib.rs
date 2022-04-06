@@ -114,6 +114,8 @@ pub struct Contract {
     status: ContractStatus,
     oracle: Oracle,
     spread: Spread,
+    commission_in_usn: u128,
+    commission_in_near: u128,
 }
 
 const DATA_IMAGE_SVG_NEAR_ICON: &str =
@@ -249,6 +251,8 @@ impl Contract {
             status: ContractStatus::Working,
             oracle: Oracle::default(),
             spread: Spread::Exponential(ExponentialSpreadParams::default()),
+            commission_in_usn: 0,
+            commission_in_near: 0
         };
 
         this.token.internal_deposit(&owner_id, NO_DEPOSIT);
@@ -385,8 +389,12 @@ impl Contract {
 
         // Commission.
         let spread_denominator = 10u128.pow(SPREAD_DECIMAL as u32);
-        let spread_multiplier = spread_denominator - self.spread_u128(amount); // 1 - 0.005
-        let amount = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator; // amount * 0.995
+        let commission_in_usn = U256::from(amount) * U256::from(self.spread_u128(amount)) / spread_denominator; // amount * 0.005
+        let commission_in_near = commission_in_usn * multiplier / 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL));
+        self.increase_commission_in_usn(commission_in_usn.as_u128());
+        self.increase_commission_in_near(commission_in_near.as_u128());
+
+        let amount = U256::from(amount) - commission_in_usn; // amount * 0.995
 
         // The final amount is going to be less than u128 after removing commission.
         let amount = amount.as_u128();
@@ -446,8 +454,12 @@ impl Contract {
 
         // Commission.
         let spread_denominator = 10u128.pow(SPREAD_DECIMAL as u32);
-        let spread_multiplier = spread_denominator - self.spread_u128(amount);
-        let sell = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator;
+        let commission_in_usn = U256::from(amount) * U256::from(self.spread_u128(amount)) / spread_denominator;
+        let commission_in_near = commission_in_usn * U256::from(rate.multiplier()) / 10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL));
+        self.increase_commission_in_usn(commission_in_usn.as_u128());
+        self.increase_commission_in_near(commission_in_near.as_u128());
+
+        let sell = U256::from(amount) - commission_in_usn;
 
         // Make exchange: USN -> NEAR.
         let deposit = sell * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL)))
@@ -578,6 +590,22 @@ impl Contract {
 
     pub fn version(&self) -> String {
         format!("{}:{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    }
+
+    pub fn get_commission_in_usn(&self) -> U128 {
+        U128(self.commission_in_usn)
+    }
+
+    fn increase_commission_in_usn(&mut self, amount: u128) {
+        self.commission_in_usn += amount;
+    }
+
+    pub fn get_commission_in_near(&self) -> U128 {
+        U128(self.commission_in_usn)
+    }
+
+    fn increase_commission_in_near(&mut self, amount: u128) {
+        self.commission_in_near += amount;
     }
 
     /// This is NOOP implementation. KEEP IT if you haven't changed contract state.
