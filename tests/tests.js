@@ -222,7 +222,7 @@ describe('User', async function () {
   });
 
   // Issue: https://github.com/near/sandbox/issues/27
-  it.skip('sells USN with the current exchange rate', async () => {
+  it('sells USN with the current exchange rate', async () => {
     const near = await global.aliceContract.sell({
       args: {
         amount: '11032461000000000000',
@@ -234,7 +234,7 @@ describe('User', async function () {
   });
 
   // Issue: https://github.com/near/sandbox/issues/27
-  it.skip('sells USN with slippage control', async () => {
+  it('sells USN with slippage control', async () => {
     const near = await global.bobContract.sell({
       args: {
         amount: '11032461000000000000',
@@ -268,7 +268,7 @@ describe('User', async function () {
     assert(near_before - near_after < 6);
   });
 
-  it.skip('should sell all USN to get unregistered', async () => {
+  it('should sell all USN to get unregistered', async () => {
     await global.aliceContract.sell({
       args: {
         amount: await global.aliceContract.ft_balance_of({
@@ -361,7 +361,7 @@ describe('Adaptive Spread', async function () {
   });
 
   // Issue: https://github.com/near/sandbox/issues/27
-  it.skip('should be used to sell USN', async () => {
+  it('should be used to sell USN', async () => {
     const near = await global.aliceContract.sell({
       args: {
         amount: '1108854824870000000000',
@@ -440,7 +440,7 @@ describe('Fixed Spread', async function () {
   });
 
   // Issue: https://github.com/near/sandbox/issues/27
-  it.skip('should be used to sell USN', async () => {
+  it('should be used to sell USN', async () => {
     const near = await global.aliceContract.sell({
       args: {
         amount: '1103246100000000000000',
