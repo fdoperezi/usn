@@ -89,6 +89,9 @@ trait Usdt {
 #[ext_contract(ext_pool_self)]
 trait RefFinanceHandler {
     #[private]
+    fn handle_transfer_then_mint(&mut self, whole_amount: U128) -> PromiseOrValue<()>;
+
+    #[private]
     #[payable]
     fn handle_deposit_then_add_liquidity(
         &mut self,
@@ -99,6 +102,8 @@ trait RefFinanceHandler {
 }
 
 trait RefFinanceHandler {
+    fn handle_transfer_then_mint(&mut self, whole_amount: U128) -> PromiseOrValue<()>;
+
     fn handle_deposit_then_add_liquidity(
         &mut self,
         whole_amount: U128,
@@ -109,6 +114,36 @@ trait RefFinanceHandler {
 
 #[near_bindgen]
 impl RefFinanceHandler for Contract {
+    #[private]
+    fn handle_transfer_then_mint(&mut self, whole_amount: U128) -> PromiseOrValue<()> {
+        if !is_promise_success() {
+            // USDT transfer failed, skip minting.
+            return PromiseOrValue::Value(());
+        }
+
+        let usn_addr = env::current_account_id();
+        let ref_addr = CONFIG.ref_address.parse().unwrap();
+        let usn_balance = self.token.internal_unwrap_balance_of(&usn_addr);
+        let usn_amount: u128 = extend_decimals(whole_amount.0, self.decimals());
+
+
+        // Mint necessary USN amount.
+        if usn_balance < usn_amount {
+            let yet_to_mint = usn_amount - usn_balance;
+            self.token.internal_mint(&usn_addr, yet_to_mint);
+            event::emit::ft_mint(&usn_addr, yet_to_mint, None);
+        }
+
+        PromiseOrValue::Promise(self.token.internal_transfer_call(
+            &usn_addr,
+            &ref_addr,
+            usn_amount,
+            GAS_FOR_FT_TRANSFER_CALL,
+            None,
+            "".to_string(), // Empty message == deposit action on the ref-finance.
+        ))
+    }
+
     #[private]
     #[payable]
     fn handle_deposit_then_add_liquidity(
@@ -185,58 +220,47 @@ impl Contract {
         );
 
         let usn_addr = env::current_account_id();
-        let usdt_addr = CONFIG.usdt_address.parse().unwrap();
-        let ref_addr = CONFIG.ref_address.parse().unwrap();
-        let usn_balance = self.token.internal_unwrap_balance_of(&usn_addr);
-        let usn_amount: u128 = extend_decimals(whole_amount.0, self.decimals());
+        let usdt_addr: AccountId = CONFIG.usdt_address.parse().unwrap();
+        let ref_addr: AccountId = CONFIG.ref_address.parse().unwrap();
         let usdt_amount: u128 = extend_decimals(whole_amount.0, USDT_DECIMALS);
 
-        // Mint necessary USN amount.
-        if usn_balance < usn_amount {
-            let yet_to_mint = usn_amount - usn_balance;
-            self.token.internal_mint(&usn_addr, yet_to_mint);
-            event::emit::ft_mint(&usn_addr, yet_to_mint, None);
-        }
-
-        // Do 2 transfers: "usn":USN -> ref-finance, and "usn":USDT -> ref-finance.
-        // Ignoring transfer results: relying on the deposit state.
-        self.token
-            .internal_transfer_call(
-                &usn_addr,
-                &ref_addr,
-                usn_amount,
-                GAS_FOR_FT_TRANSFER_CALL,
-                None,
-                "".to_string(), // Empty message == deposit action on the ref-finance.
-            )
-            .then(ext_ft::ft_transfer_call(
-                ref_addr.clone(),
-                usdt_amount.into(),
-                None,
-                "".to_string(), // Empty message == deposit action on the ref-finance.
-                usdt_addr,
-                ONE_YOCTO,
-                GAS_FOR_FT_TRANSFER_CALL,
-            ))
-            // Double-check deposits and pool configuration.
-            .then(ext_ref_finance::get_deposits(
-                usn_addr.clone(),
-                ref_addr.clone(),
-                NO_DEPOSIT,
-                GAS_FOR_GET_PROMISE,
-            ))
-            .and(ext_ref_finance::get_stable_pool(
-                CONFIG.stable_pool_id,
-                ref_addr.clone(),
-                0,
-                GAS_FOR_GET_PROMISE,
-            ))
-            .then(ext_pool_self::handle_deposit_then_add_liquidity(
-                whole_amount,
-                usn_addr,
-                env::attached_deposit() - 1,
-                GAS_FOR_HANDLE_ADD_LIQUIDITY_PROMISE,
-            ))
+        // Do 2 transfers: "usn":USDT -> ref-finance, then "usn":USN -> ref-finance.
+        // Mint USN once after successful USDT transfer.
+        // Ignoring transfer results overall, relying on the deposit state.
+        ext_ft::ft_transfer_call(
+            ref_addr.clone(),
+            usdt_amount.into(),
+            None,
+            "".to_string(), // Empty message == deposit action on the ref-finance.
+            usdt_addr,
+            ONE_YOCTO,
+            GAS_FOR_FT_TRANSFER_CALL,
+        )
+        .then(ext_pool_self::handle_transfer_then_mint(
+            whole_amount,
+            usn_addr.clone(),
+            NO_DEPOSIT,
+            GAS_FOR_FT_TRANSFER_CALL,
+        ))
+        // Double-check deposits and pool configuration.
+        .then(ext_ref_finance::get_deposits(
+            usn_addr.clone(),
+            ref_addr.clone(),
+            NO_DEPOSIT,
+            GAS_FOR_GET_PROMISE,
+        ))
+        .and(ext_ref_finance::get_stable_pool(
+            CONFIG.stable_pool_id,
+            ref_addr.clone(),
+            0,
+            GAS_FOR_GET_PROMISE,
+        ))
+        .then(ext_pool_self::handle_deposit_then_add_liquidity(
+            whole_amount,
+            usn_addr,
+            env::attached_deposit() - 1,
+            GAS_FOR_HANDLE_ADD_LIQUIDITY_PROMISE,
+        ))
     }
 }
 

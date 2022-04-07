@@ -64,15 +64,18 @@ const oracleMethods = {
 };
 
 const usdtMethods = {
-  changeMethods: ['new', 'mint'],
+  viewMethods: ['ft_balance_of'],
+  changeMethods: ['new', 'mint', 'burn', 'ft_transfer'],
 };
 
 const refMethods = {
+  viewMethods: ['get_stable_pool'],
   changeMethods: [
     'new',
     'storage_deposit',
     'register_tokens',
     'add_stable_swap_pool',
+    'remove_liquidity_by_tokens',
   ],
 };
 
@@ -140,11 +143,15 @@ async function sandboxSetup() {
     usdtMethods
   );
   await usdtContract.new({ args: {} });
+  // Register accounts in USDT contract to enable depositing.
   await usdtContract.mint({
-    args: { account_id: config.usnId, amount: '1000000000000' }, // 1 mln. USDT
+    args: { account_id: config.usdtId, amount: '10000000000000' }, // 10 mln. USDT treasury
   });
   await usdtContract.mint({
-    args: { account_id: config.refId, amount: '1000000' }, // 1 USDT
+    args: { account_id: config.refId, amount: '0' },
+  });
+  await usdtContract.mint({
+    args: { account_id: config.usnId, amount: '0' },
   });
 
   // Deploy Ref.Finance (ref-exchange) contract.
@@ -163,7 +170,7 @@ async function sandboxSetup() {
   });
 
   const usnRef = new nearAPI.Contract(usnAccount, config.refId, refMethods);
-  await usnRef.storage_deposit({ args: {}, amount: '100000000000000000000000' });
+  await usnRef.storage_deposit({ args: {}, amount: '10000000000000000000000' });
   await usnRef.register_tokens({
     args: { token_ids: [config.usdtId, config.usnId] },
     amount: '1',

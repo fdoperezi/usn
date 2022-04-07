@@ -2,6 +2,7 @@
 
 const assert = require('assert').strict;
 const config = require('./sandbox-setup').config;
+const BN = require('bn.js');
 
 const ONE_NEAR = '1000000000000000000000000';
 const ONE_YOCTO = '1';
@@ -180,7 +181,7 @@ describe('User', async function () {
         });
       },
       (err) => {
-        assert(err.message.includes('attached deposit exchanges to 0 tokens'));
+        assert.match(err.message, /attached deposit exchanges to 0 tokens/);
         return true;
       }
     );
@@ -214,7 +215,7 @@ describe('User', async function () {
         });
       },
       (err) => {
-        assert(err.message.includes('Slippage error'));
+        assert.match(err.message, /Slippage error/);
         return true;
       }
     );
@@ -452,15 +453,145 @@ describe('Fixed Spread', async function () {
 });
 
 describe('Stable Pool (USDT/USN)', async function () {
-  this.timeout(10000);
+  this.timeout(15000);
+
+  const MAX_TRANSFER_COST = '780000000000000000001';
 
   it('should be initialized with a single call', async () => {
+    // Deposit 1 mln. USDT on the "usn" account.
+    await global.usdtContract.ft_transfer({
+      args: { receiver_id: config.usnId, amount: '1000000000000' },
+      amount: '1',
+    });
+
     await assert.doesNotReject(async () => {
       await global.usnContract.transfer_stable_liquidity({
-        args: { whole_amount: '1000000' },
-        amount: "780000000000000000001",
+        args: { whole_amount: '1000000' }, // $1 mln.
+        amount: MAX_TRANSFER_COST,
         gas: GAS_FOR_CALL,
       });
     });
+
+    // Should fail for the 2nd time as the USDT "usn" account is already empty.
+    await assert.rejects(async () => {
+      await global.usnContract.transfer_stable_liquidity({
+        args: { whole_amount: '1000000' }, // $1 mln.
+        amount: MAX_TRANSFER_COST,
+        gas: GAS_FOR_CALL,
+      });
+    });
+
+    assert.equal(
+      await global.usdtContract.ft_balance_of({ account_id: config.usnId }),
+      '0'
+    );
+  });
+
+  it('should fail having not enough USDT', async () => {
+    // Should fail at the `add_stable_liquidity` cross-contract call.
+    // 1 yoctoNEAR goes for ft_transfer_call, then it's not enough for adding liquidity.
+    await assert.rejects(
+      async () => {
+        await global.usnContract.transfer_stable_liquidity({
+          args: { whole_amount: '1000000' }, // $1 mln.
+          amount: MAX_TRANSFER_COST,
+          gas: GAS_FOR_CALL,
+        });
+      },
+      (err) => {
+        assert.match(err.message, /Not enough USDT/);
+        return true;
+      }
+    );
+  });
+
+  it('should fail having not enough attached NEAR', async () => {
+    // Deposit 1 mln. USDT on the "usn" account.
+    await global.usdtContract.ft_transfer({
+      args: { receiver_id: config.usnId, amount: '1000000000000' },
+      amount: '1',
+    });
+
+    // Should fail at the `add_stable_liquidity` cross-contract call.
+    // 1 yoctoNEAR goes for ft_transfer_call, then it's not enough for adding liquidity.
+    await assert.rejects(
+      async () => {
+        await global.usnContract.transfer_stable_liquidity({
+          args: { whole_amount: '1000000' }, // $1 mln.
+          amount: '1', // 1 yoctoNEAR is used for ft_transfer_call,
+          gas: GAS_FOR_CALL,
+        });
+      },
+      (err) => {
+        // Error from `add_stable_liquidity` after `ft_transfer_call`.
+        assert.match(
+          err.message,
+          /E35: requires attached deposit of at least 1 yoctoNEAR/
+        );
+        return true;
+      }
+    );
+  });
+
+  it('should finalize depositing after failure', async () => {
+    await global.usdtContract.ft_transfer({
+      args: { receiver_id: config.usnId, amount: '1000000000000' },
+      amount: '1',
+    });
+
+    // Should fail at the `add_stable_liquidity` cross-contract call.
+    // But deposit already belongs to the ref.finance account.
+    await assert.rejects(async () => {
+      await global.usnContract.transfer_stable_liquidity({
+        args: { whole_amount: '1000000' },
+        amount: '1',
+        gas: GAS_FOR_CALL,
+      });
+    });
+
+    const refUsdt = await global.usdtContract.ft_balance_of({
+      account_id: config.refId,
+    });
+    const refUsn = await global.usnContract.ft_balance_of({
+      account_id: config.refId,
+    });
+
+    await assert.notEqual(refUsdt, '0');
+    await assert.notEqual(refUsn, '0');
+    await assert.equal(
+      await global.usdtContract.ft_balance_of({ account_id: config.usnId }),
+      '0'
+    );
+
+    const poolInfo = await global.refContract.get_stable_pool({ pool_id: 0 });
+
+    await assert.doesNotReject(async () => {
+      await global.usnContract.transfer_stable_liquidity({
+        args: { whole_amount: '1000000' },
+        amount: MAX_TRANSFER_COST,
+        gas: GAS_FOR_CALL,
+      });
+    });
+
+    const refUsdt2 = await global.usdtContract.ft_balance_of({
+      account_id: config.refId,
+    });
+    const refUsn2 = await global.usnContract.ft_balance_of({
+      account_id: config.refId,
+    });
+
+    // The second call of transfer_stable_liquidity should not mint additional money.
+    await assert.equal(refUsdt, refUsdt2);
+    await assert.equal(refUsn, refUsn2);
+
+    const poolInfo2 = await global.refContract.get_stable_pool({ pool_id: 0 });
+    assert.notDeepEqual(poolInfo.amounts, poolInfo2.amounts);
+
+    // Pool must grow exactly on $1000000.
+    assert(
+      new BN('1000000000000', 10).eq(
+        new BN(poolInfo2.amounts[0], 10).sub(new BN(poolInfo.amounts[0], 10))
+      )
+    );
   });
 });
