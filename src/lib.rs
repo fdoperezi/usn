@@ -251,8 +251,8 @@ impl Contract {
             status: ContractStatus::Working,
             oracle: Oracle::default(),
             spread: Spread::Exponential(ExponentialSpreadParams::default()),
-            commission_usn: 0,
-            commission_near: 0
+            commission_usn: 98_942_062_800_000_000,
+            commission_near: 10_498_000_000_000_000_000_000
         };
 
         this.token.internal_deposit(&owner_id, NO_DEPOSIT);
@@ -462,7 +462,6 @@ impl Contract {
 
         let spread_multiplier = spread_denominator - self.spread_u128(amount);
         let sell = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator;
-
         // Make exchange: USN -> NEAR.
         let deposit = sell * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL)))
             / rate.multiplier();
@@ -1153,7 +1152,7 @@ mod tests {
     }
 
     #[test]
-    fn test_commission_buy() {
+    fn test_commission() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
 
@@ -1172,14 +1171,29 @@ mod tests {
         );
         assert_eq!(
             contract.commission_usn(),
-            U128(55_719_500_000_000_000)
+            U128(154_661_562_800_000_000)
         );
 
         assert_eq!(
             contract.commission_near(),
-            U128(5_000_000_000_000_000_000_000)
+            U128(15_498_000_000_000_000_000_000)
         );
 
+        contract.finish_sell(
+            accounts(2),
+            1_000_000_000_000_000,
+            Some(expected_rate.clone()),
+            fresh_rate,
+        );
+        assert_eq!(
+            contract.commission_usn(),
+            U128(154_666_562_800_000_000)
+        );
+
+        assert_eq!(
+            contract.commission_near(),
+            U128(15_498_448_675_957_250_154_793)
+        );
     }
 
     #[test]
