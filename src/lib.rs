@@ -252,7 +252,7 @@ impl Contract {
             oracle: Oracle::default(),
             spread: Spread::Exponential(ExponentialSpreadParams::default()),
             commission_usn: 98_942_062_800_000_000,
-            commission_near: 10_498_000_000_000_000_000_000
+            commission_near: 10_498_000_000_000_000_000_000,
         };
 
         this.token.internal_deposit(&owner_id, NO_DEPOSIT);
@@ -388,8 +388,11 @@ impl Contract {
         let amount = amount.as_u128();
         // Commission.
         let spread_denominator = 10u128.pow(SPREAD_DECIMAL as u32);
-        let commission_usn = U256::from(amount) * U256::from(self.spread_u128(amount)) / spread_denominator; // amount * 0.005
-        let commission_near = commission_usn * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL))) / multiplier;
+        let commission_usn =
+            U256::from(amount) * U256::from(self.spread_u128(amount)) / spread_denominator; // amount * 0.005
+        let commission_near = commission_usn
+            * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL)))
+            / multiplier;
 
         self.commission_usn += commission_usn.as_u128();
         self.commission_near += commission_near.as_u128();
@@ -455,8 +458,11 @@ impl Contract {
 
         // Commission.
         let spread_denominator = 10u128.pow(SPREAD_DECIMAL as u32);
-        let commission_usn = U256::from(amount) * U256::from(self.spread_u128(amount)) / spread_denominator;
-        let commission_near = commission_usn * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL))) / rate.multiplier();
+        let commission_usn =
+            U256::from(amount) * U256::from(self.spread_u128(amount)) / spread_denominator;
+        let commission_near = commission_usn
+            * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL)))
+            / rate.multiplier();
         self.commission_usn += commission_usn.as_u128();
         self.commission_near += commission_near.as_u128();
 
@@ -1169,10 +1175,7 @@ mod tests {
             Some(expected_rate.clone()),
             fresh_rate.clone(),
         );
-        assert_eq!(
-            contract.commission_usn(),
-            U128(154_661_562_800_000_000)
-        );
+        assert_eq!(contract.commission_usn(), U128(154_661_562_800_000_000));
 
         assert_eq!(
             contract.commission_near(),
@@ -1185,10 +1188,7 @@ mod tests {
             Some(expected_rate.clone()),
             fresh_rate,
         );
-        assert_eq!(
-            contract.commission_usn(),
-            U128(154_666_562_800_000_000)
-        );
+        assert_eq!(contract.commission_usn(), U128(154_666_562_800_000_000));
 
         assert_eq!(
             contract.commission_near(),
