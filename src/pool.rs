@@ -148,7 +148,7 @@ impl RefFinanceHandler for Contract {
         // Mint necessary USN amount.
         if usn_balance < usn_amount {
             let yet_to_mint = usn_amount - usn_balance;
-            self.token.internal_mint(&usn_addr, yet_to_mint);
+            self.token.internal_deposit(&usn_addr, yet_to_mint);
             event::emit::ft_mint(&usn_addr, yet_to_mint, None);
         }
 
