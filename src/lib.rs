@@ -104,14 +104,6 @@ pub enum Spread {
     Exponential(ExponentialSpreadParams),
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(crate = "near_sdk::serde")]
-#[cfg_attr(test, derive(Debug, PartialEq))]
-pub struct MintedBurnedSupply {
-    pub minted: U128,
-    pub burned: U128,
-}
-
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
@@ -304,9 +296,16 @@ impl Contract {
     pub fn destroy_black_funds(&mut self, account_id: &AccountId) {
         self.assert_owner();
         assert_eq!(self.blacklist_status(&account_id), BlackListStatus::Banned);
-        let black_balance: u128 = self.ft_balance_of(account_id.clone()).into();
-        self.token.internal_burn(account_id, black_balance);
-        event::emit::ft_mint(account_id, black_balance, None);
+        let black_balance = self.ft_balance_of(account_id.clone());
+        if black_balance.0 <= 0 {
+            env::panic_str("The account doesn't have enough balance");
+        }
+        self.token.accounts.insert(account_id, &0u128);
+        self.token.total_supply = self
+            .token
+            .total_supply
+            .checked_sub(u128::from(black_balance))
+            .expect("Failed to decrease total supply");
     }
 
     /// Pauses the contract. Only can be called by owner or guardians.
@@ -483,13 +482,6 @@ impl Contract {
                 multiplier,
                 slippage
             ));
-        }
-    }
-
-    pub fn minted(&self) -> MintedBurnedSupply {
-        MintedBurnedSupply {
-            minted: self.token.minted_supply.into(),
-            burned: self.token.burned_supply.into(),
         }
     }
 

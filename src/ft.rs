@@ -1,7 +1,7 @@
 use crate::*;
 use near_contract_standards::fungible_token::core_impl::ext_fungible_token_receiver;
 use near_contract_standards::fungible_token::events::FtTransfer;
-use near_sdk::{log, require, IntoStorageKey, PromiseResult};
+use near_sdk::{log, require, IntoStorageKey, PromiseResult, StorageUsage};
 
 const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas(5_000_000_000_000);
 const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas(25_000_000_000_000 + GAS_FOR_RESOLVE_TRANSFER.0);
@@ -33,11 +33,9 @@ pub struct FungibleTokenFreeStorage {
     /// Total supply of the all token.
     pub total_supply: Balance,
 
-    /// Positive amount if minted more than burned.
-    pub minted_supply: Balance,
-
-    /// Positive amount if burned more than minted.
-    pub burned_supply: Balance,
+    /// DEPRECATED. Kept to match state without upgradability.
+    /// Previously the maximum storage size of one account.
+    pub _unused: StorageUsage,
 }
 
 impl FungibleTokenFreeStorage {
@@ -48,8 +46,7 @@ impl FungibleTokenFreeStorage {
         Self {
             accounts: LookupMap::new(prefix),
             total_supply: 0,
-            minted_supply: 0,
-            burned_supply: 0,
+            _unused: 0,
         }
     }
 
@@ -91,28 +88,6 @@ impl FungibleTokenFreeStorage {
         }
     }
 
-    pub fn internal_mint(&mut self, account_id: &AccountId, amount: Balance) {
-        require!(amount > 0, "The amount should be a positive number");
-        self.internal_deposit(account_id, amount);
-
-        let burned = self.burned_supply.saturating_sub(amount);
-        let minted = self.minted_supply + amount.saturating_sub(self.burned_supply);
-
-        self.burned_supply = burned;
-        self.minted_supply = minted;
-    }
-
-    pub fn internal_burn(&mut self, account_id: &AccountId, amount: Balance) {
-        require!(amount > 0, "The amount should be a positive number");
-        self.internal_withdraw(account_id, amount);
-
-        let minted = self.minted_supply.saturating_sub(amount);
-        let burned = self.burned_supply + amount.saturating_sub(self.minted_supply);
-
-        self.burned_supply = burned;
-        self.minted_supply = minted;
-    }
-
     pub fn internal_transfer(
         &mut self,
         sender_id: &AccountId,
@@ -136,7 +111,7 @@ impl FungibleTokenFreeStorage {
         .emit();
     }
 
-    pub fn internal_transfer_call(
+pub fn internal_transfer_call(
         &mut self,
         sender_id: &AccountId,
         receiver_id: &AccountId,
