@@ -111,7 +111,7 @@ impl FungibleTokenFreeStorage {
         .emit();
     }
 
-pub fn internal_transfer_call(
+    pub fn internal_transfer_call(
         &mut self,
         sender_id: &AccountId,
         receiver_id: &AccountId,
