@@ -89,7 +89,11 @@ trait Usdt {
 #[ext_contract(ext_pool_self)]
 trait RefFinanceHandler {
     #[private]
-    fn handle_transfer_then_mint(&mut self, whole_amount: U128) -> PromiseOrValue<()>;
+    fn handle_transfer_then_mint(
+        &mut self,
+        whole_amount: U128,
+        #[callback] transferred_usdt_amount: U128,
+    ) -> PromiseOrValue<()>;
 
     #[private]
     #[payable]
@@ -102,7 +106,11 @@ trait RefFinanceHandler {
 }
 
 trait RefFinanceHandler {
-    fn handle_transfer_then_mint(&mut self, whole_amount: U128) -> PromiseOrValue<()>;
+    fn handle_transfer_then_mint(
+        &mut self,
+        whole_amount: U128,
+        transferred_usdt_amount: U128,
+    ) -> PromiseOrValue<()>;
 
     fn handle_deposit_then_add_liquidity(
         &mut self,
@@ -115,16 +123,27 @@ trait RefFinanceHandler {
 #[near_bindgen]
 impl RefFinanceHandler for Contract {
     #[private]
-    fn handle_transfer_then_mint(&mut self, whole_amount: U128) -> PromiseOrValue<()> {
-        if !is_promise_success() {
+    fn handle_transfer_then_mint(
+        &mut self,
+        whole_amount: U128,
+        #[callback] transferred_usdt_amount: U128,
+    ) -> PromiseOrValue<()> {
+        let transferred_usdt_amount: u128 = transferred_usdt_amount.into();
+
+        if !is_promise_success() || transferred_usdt_amount == 0 {
             // USDT transfer failed, skip minting.
             return PromiseOrValue::Value(());
         }
 
+        // A theoretical corner case when USDT has transferred partially.
+        // Let's equalize liquidity and finish depositing.
+        let usdt_whole_amount = remove_decimals(transferred_usdt_amount, USDT_DECIMALS);
+        let whole_amount = std::cmp::min(whole_amount.into(), usdt_whole_amount);
+
         let usn_addr = env::current_account_id();
         let ref_addr = CONFIG.ref_address.parse().unwrap();
         let usn_balance = self.token.internal_unwrap_balance_of(&usn_addr);
-        let usn_amount: u128 = extend_decimals(whole_amount.0, self.decimals());
+        let usn_amount = extend_decimals(whole_amount, self.decimals());
 
         // Mint necessary USN amount.
         if usn_balance < usn_amount {
@@ -203,12 +222,18 @@ impl Contract {
     }
 
     /// Transfers liquidity from USDT and USN accounts to ref.finance on behalf of "usn".
-    /// Step 1. USDT -> REF: ft_transfer_call from "usn" USDT account to ref.finance contract.
-    /// Step 2. USN -> REF: If USDT transfer successful, mint USN + ft_transfer_call from
-    ///         "usn" USN account to ref.finance contract.
+    ///
+    ///  * `whole_amount` - token amount WITHOUT decimals, e.g. "1000" means $1000.
+    ///
+    /// # Algorithm
+    ///
+    /// Step 1. `USDT -> REF`: ft_transfer_call from "usn" USDT account to ref.finance contract.
+    /// Step 2. `USN -> REF`: If USDT transfer successful, then
+    ///          * mint as much USN as successfully transferred USDT,
+    ///          * ft_transfer_call of minted USN to ref.finance contract.
     /// Step 3. Check balances, ignoring step 1 & 2. It allows to repeat adding liquidity
     ///         next time with full ref.finance deposits (transfers would fail in this case).
-    /// Step 4. REF -> POOL: add_stable_liquidity to the USDT/USN stable pool filling it
+    /// Step 4. `REF -> POOL`: add_stable_liquidity to the USDT/USN stable pool filling it
     ///         from usn deposit.
     #[payable]
     pub fn transfer_stable_liquidity(&mut self, whole_amount: U128) -> Promise {
@@ -273,4 +298,8 @@ impl Contract {
 
 fn extend_decimals(whole: u128, decimals: u8) -> u128 {
     whole * 10u128.pow(decimals as u32)
+}
+
+fn remove_decimals(amount: u128, decimals: u8) -> u128 {
+    amount / 10u128.pow(decimals as u32)
 }
