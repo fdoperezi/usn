@@ -126,7 +126,6 @@ impl RefFinanceHandler for Contract {
         let usn_balance = self.token.internal_unwrap_balance_of(&usn_addr);
         let usn_amount: u128 = extend_decimals(whole_amount.0, self.decimals());
 
-
         // Mint necessary USN amount.
         if usn_balance < usn_amount {
             let yet_to_mint = usn_amount - usn_balance;
