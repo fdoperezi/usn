@@ -453,9 +453,18 @@ describe('Fixed Spread', async function () {
 });
 
 describe('Stable Pool (USDT/USN)', async function () {
-  this.timeout(15000);
+  this.timeout(17000);
 
   const MAX_TRANSFER_COST = '780000000000000000001';
+
+  var dao;
+
+  before(async () => {
+    await global.usnContract.set_owner({
+      args: { owner_id: config.aliceId },
+    });
+    dao = global.aliceContract;
+  });
 
   it('should be initialized with a single call', async () => {
     // Deposit 1 mln. USDT on the "usn" account.
@@ -465,7 +474,7 @@ describe('Stable Pool (USDT/USN)', async function () {
     });
 
     await assert.doesNotReject(async () => {
-      await global.usnContract.transfer_stable_liquidity({
+      await dao.transfer_stable_liquidity({
         args: { whole_amount: '1000000' }, // $1 mln.
         amount: MAX_TRANSFER_COST,
         gas: GAS_FOR_CALL,
@@ -474,7 +483,7 @@ describe('Stable Pool (USDT/USN)', async function () {
 
     // Should fail for the 2nd time as the USDT "usn" account is already empty.
     await assert.rejects(async () => {
-      await global.usnContract.transfer_stable_liquidity({
+      await dao.transfer_stable_liquidity({
         args: { whole_amount: '1000000' }, // $1 mln.
         amount: MAX_TRANSFER_COST,
         gas: GAS_FOR_CALL,
@@ -492,7 +501,7 @@ describe('Stable Pool (USDT/USN)', async function () {
     // 1 yoctoNEAR goes for ft_transfer_call, then it's not enough for adding liquidity.
     await assert.rejects(
       async () => {
-        await global.usnContract.transfer_stable_liquidity({
+        await dao.transfer_stable_liquidity({
           args: { whole_amount: '1000000' }, // $1 mln.
           amount: MAX_TRANSFER_COST,
           gas: GAS_FOR_CALL,
@@ -516,7 +525,7 @@ describe('Stable Pool (USDT/USN)', async function () {
     // 1 yoctoNEAR goes for ft_transfer_call, then it's not enough for adding liquidity.
     await assert.rejects(
       async () => {
-        await global.usnContract.transfer_stable_liquidity({
+        await dao.transfer_stable_liquidity({
           args: { whole_amount: '1000000' }, // $1 mln.
           amount: '1', // 1 yoctoNEAR is used for ft_transfer_call,
           gas: GAS_FOR_CALL,
@@ -542,7 +551,7 @@ describe('Stable Pool (USDT/USN)', async function () {
     // Should fail at the `add_stable_liquidity` cross-contract call.
     // But deposit already belongs to the ref.finance account.
     await assert.rejects(async () => {
-      await global.usnContract.transfer_stable_liquidity({
+      await dao.transfer_stable_liquidity({
         args: { whole_amount: '1000000' },
         amount: '1',
         gas: GAS_FOR_CALL,
@@ -566,7 +575,7 @@ describe('Stable Pool (USDT/USN)', async function () {
     const poolInfo = await global.refContract.get_stable_pool({ pool_id: 0 });
 
     await assert.doesNotReject(async () => {
-      await global.usnContract.transfer_stable_liquidity({
+      await dao.transfer_stable_liquidity({
         args: { whole_amount: '1000000' },
         amount: MAX_TRANSFER_COST,
         gas: GAS_FOR_CALL,
@@ -593,5 +602,11 @@ describe('Stable Pool (USDT/USN)', async function () {
         new BN(poolInfo2.amounts[0], 10).sub(new BN(poolInfo.amounts[0], 10))
       )
     );
+  });
+
+  after(async () => {
+    await dao.set_owner({
+      args: { owner_id: config.usnId },
+    });
   });
 });
