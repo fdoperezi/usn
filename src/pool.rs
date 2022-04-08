@@ -203,6 +203,14 @@ impl Contract {
         CONFIG.stable_pool_id
     }
 
+    /// Transfers liquidity from USDT and USN accounts to ref.finance on behalf of "usn".
+    /// Step 1. USDT -> REF: ft_transfer_call from "usn" USDT account to ref.finance contract.
+    /// Step 2. USN -> REF: If USDT transfer successful, mint USN + ft_transfer_call from
+    ///         "usn" USN account to ref.finance contract.
+    /// Step 3. Check balances, ignoring step 1 & 2. It allows to repeat adding liquidity
+    ///         next time with full ref.finance deposits (transfers would fail in this case).
+    /// Step 4. REF -> POOL: add_stable_liquidity to the USDT/USN stable pool filling it
+    ///         from usn deposit.
     #[payable]
     pub fn transfer_stable_liquidity(&mut self, whole_amount: U128) -> Promise {
         self.assert_owner();
