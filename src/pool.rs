@@ -242,8 +242,8 @@ impl Contract {
         // 1st yoctoNEAR is for USDT ft_transfer_call.
         // More NEARs could be required for add_stable_liquidity.
         require!(
-            env::attached_deposit() > 0,
-            "Requires attached deposit of at least 1 yoctoNEAR"
+            env::attached_deposit() > 1,
+            "Requires attached deposit more than 1 yoctoNEAR"
         );
 
         require!(

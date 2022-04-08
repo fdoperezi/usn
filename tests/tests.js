@@ -466,80 +466,15 @@ describe('Stable Pool (USDT/USN)', async function () {
     dao = global.aliceContract;
   });
 
-  it('should be initialized with a single call', async () => {
-    // Deposit 1 mln. USDT on the "usn" account.
-    await global.usdtContract.ft_transfer({
-      args: { receiver_id: config.usnId, amount: '1000000000000' },
-      amount: '1',
-    });
-
-    await assert.doesNotReject(async () => {
-      await dao.transfer_stable_liquidity({
-        args: { whole_amount: '1000000' }, // $1 mln.
-        amount: MAX_TRANSFER_COST,
-        gas: GAS_FOR_CALL,
-      });
-    });
-
-    // Should fail for the 2nd time as the USDT "usn" account is already empty.
-    await assert.rejects(async () => {
-      await dao.transfer_stable_liquidity({
-        args: { whole_amount: '1000000' }, // $1 mln.
-        amount: MAX_TRANSFER_COST,
-        gas: GAS_FOR_CALL,
-      });
-    });
-
-    assert.equal(
-      await global.usdtContract.ft_balance_of({ account_id: config.usnId }),
-      '0'
-    );
-  });
-
-  it('should fail having not enough USDT', async () => {
-    // Should fail at the `add_stable_liquidity` cross-contract call.
-    // 1 yoctoNEAR goes for ft_transfer_call, then it's not enough for adding liquidity.
-    await assert.rejects(
-      async () => {
-        await dao.transfer_stable_liquidity({
-          args: { whole_amount: '1000000' }, // $1 mln.
-          amount: MAX_TRANSFER_COST,
-          gas: GAS_FOR_CALL,
-        });
+  beforeEach(async () => {
+    await global.usdtContract.burn({
+      args: {
+        account_id: config.usnId,
+        amount: await global.usdtContract.ft_balance_of({
+          account_id: config.usnId,
+        }),
       },
-      (err) => {
-        assert.match(err.message, /Not enough USDT/);
-        return true;
-      }
-    );
-  });
-
-  it('should fail having not enough attached NEAR', async () => {
-    // Deposit 1 mln. USDT on the "usn" account.
-    await global.usdtContract.ft_transfer({
-      args: { receiver_id: config.usnId, amount: '1000000000000' },
-      amount: '1',
     });
-
-    // Should fail at the `add_stable_liquidity` cross-contract call.
-    // 1 yoctoNEAR goes for ft_transfer_call, then it's not enough for adding liquidity.
-    await assert.rejects(
-      async () => {
-        await dao.transfer_stable_liquidity({
-          args: { whole_amount: '1000000' }, // $1 mln.
-          amount: '1', // 1 yoctoNEAR is used for ft_transfer_call,
-          gas: GAS_FOR_CALL,
-        });
-      },
-      (err) => {
-        // Error from `add_stable_liquidity` after `ft_transfer_call`.
-        assert.match(
-          err.message,
-          /E35: requires attached deposit of at least 1 yoctoNEAR/
-        );
-        return true;
-      }
-    );
   });
 
   it('should finalize depositing after failure', async () => {
@@ -550,13 +485,22 @@ describe('Stable Pool (USDT/USN)', async function () {
 
     // Should fail at the `add_stable_liquidity` cross-contract call.
     // But deposit already belongs to the ref.finance account.
-    await assert.rejects(async () => {
-      await dao.transfer_stable_liquidity({
-        args: { whole_amount: '1000000' },
-        amount: '1',
-        gas: GAS_FOR_CALL,
-      });
-    });
+    await assert.rejects(
+      async () => {
+        await dao.transfer_stable_liquidity({
+          args: { whole_amount: '1000000' },
+          amount: '2',
+          gas: GAS_FOR_CALL,
+        });
+      },
+      (err) => {
+        assert.match(
+          err.message,
+          /ERR_STORAGE_DEPOSIT need 780000000000000000000/
+        );
+        return true;
+      }
+    );
 
     const refUsdt = await global.usdtContract.ft_balance_of({
       account_id: config.refId,
@@ -601,6 +545,42 @@ describe('Stable Pool (USDT/USN)', async function () {
       new BN('1000000000000', 10).eq(
         new BN(poolInfo2.amounts[0], 10).sub(new BN(poolInfo.amounts[0], 10))
       )
+    );
+  });
+
+  it('should fail having not enough USDT', async () => {
+    // Should fail after the 1st ft_transfer_call.
+    await assert.rejects(
+      async () => {
+        await dao.transfer_stable_liquidity({
+          args: { whole_amount: '1000000' }, // $1 mln.
+          amount: MAX_TRANSFER_COST,
+          gas: GAS_FOR_CALL,
+        });
+      },
+      (err) => {
+        assert.match(err.message, /Not enough USDT/);
+        return true;
+      }
+    );
+  });
+
+  it('should fail having not enough attached NEAR', async () => {
+    await assert.rejects(
+      async () => {
+        await dao.transfer_stable_liquidity({
+          args: { whole_amount: '1000000' },
+          amount: '1',
+          gas: GAS_FOR_CALL,
+        });
+      },
+      (err) => {
+        assert.match(
+          err.message,
+          /Requires attached deposit more than 1 yoctoNEAR/
+        );
+        return true;
+      }
     );
   });
 
