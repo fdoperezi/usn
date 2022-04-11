@@ -33,6 +33,9 @@ const GAS_FOR_REFUND_PROMISE: Gas = Gas(5_000_000_000_000);
 const GAS_FOR_BUY_PROMISE: Gas = Gas(10_000_000_000_000);
 const GAS_FOR_SELL_PROMISE: Gas = Gas(15_000_000_000_000);
 const GAS_FOR_RETURN_VALUE_PROMISE: Gas = Gas(5_000_000_000_000);
+// Commission on USN account on 11.04.22
+const USN_COMMISSION: Balance = 98_942_062_800_000_000;
+const NEAR_COMMISSION: Balance = 10_498_000_000_000_000_000_000;
 
 const MAX_SPREAD: Balance = 50_000; // 0.05 = 5%
 const SPREAD_DECIMAL: u8 = 6;
@@ -79,6 +82,13 @@ pub struct ExpectedRate {
     pub decimals: u8,
 }
 
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Default)]
+#[serde(crate = "near_sdk::serde")]
+pub struct Commission {
+    usn: Balance,
+    near: Balance,
+}
+
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct ExponentialSpreadParams {
@@ -114,8 +124,7 @@ pub struct Contract {
     status: ContractStatus,
     oracle: Oracle,
     spread: Spread,
-    commission_usn: Balance,
-    commission_near: Balance,
+    commission: Commission,
 }
 
 const DATA_IMAGE_SVG_NEAR_ICON: &str =
@@ -251,8 +260,7 @@ impl Contract {
             status: ContractStatus::Working,
             oracle: Oracle::default(),
             spread: Spread::Exponential(ExponentialSpreadParams::default()),
-            commission_usn: 98_942_062_800_000_000,
-            commission_near: 10_498_000_000_000_000_000_000,
+            commission: Commission::default(),
         };
 
         this.token.internal_deposit(&owner_id, NO_DEPOSIT);
@@ -394,8 +402,8 @@ impl Contract {
             * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL)))
             / multiplier;
 
-        self.commission_usn += commission_usn.as_u128();
-        self.commission_near += commission_near.as_u128();
+        self.commission.usn += commission_usn.as_u128();
+        self.commission.near += commission_near.as_u128();
 
         let spread_multiplier = spread_denominator - self.spread_u128(amount); // 1 - 0.005
         let amount = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator; // amount * 0.995
@@ -463,8 +471,8 @@ impl Contract {
         let commission_near = commission_usn
             * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL)))
             / rate.multiplier();
-        self.commission_usn += commission_usn.as_u128();
-        self.commission_near += commission_near.as_u128();
+        self.commission.usn += commission_usn.as_u128();
+        self.commission.near += commission_near.as_u128();
 
         let spread_multiplier = spread_denominator - self.spread_u128(amount);
         let sell = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator;
@@ -600,11 +608,11 @@ impl Contract {
     }
 
     pub fn commission_usn(&self) -> U128 {
-        U128(self.commission_usn)
+        U128(self.commission.usn)
     }
 
     pub fn commission_near(&self) -> U128 {
-        U128(self.commission_near)
+        U128(self.commission.near)
     }
 
     /// This is NOOP implementation. KEEP IT if you haven't changed contract state.
@@ -1175,11 +1183,11 @@ mod tests {
             Some(expected_rate.clone()),
             fresh_rate.clone(),
         );
-        assert_eq!(contract.commission_usn(), U128(154_661_562_800_000_000));
+        assert_eq!(contract.commission_usn(), U128(55_719_500_000_000_000));
 
         assert_eq!(
             contract.commission_near(),
-            U128(15_498_000_000_000_000_000_000)
+            U128(5_000_000_000_000_000_000_000)
         );
 
         contract.finish_sell(
@@ -1188,11 +1196,11 @@ mod tests {
             Some(expected_rate.clone()),
             fresh_rate,
         );
-        assert_eq!(contract.commission_usn(), U128(154_666_562_800_000_000));
+        assert_eq!(contract.commission_usn(), U128(55_724_500_000_000_000));
 
         assert_eq!(
             contract.commission_near(),
-            U128(15_498_448_675_957_250_154_793)
+            U128(5_000_448_675_957_250_154_793)
         );
     }
 

@@ -79,7 +79,6 @@ describe('Owner', function () {
       });
     });
   });
-
   it('should get a usn commission', async () => {
     const commission_usn = await global.aliceContract.commission_usn();
     assert.equal(commission_usn, '98942062800000000');
