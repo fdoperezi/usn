@@ -34,8 +34,8 @@ const GAS_FOR_BUY_PROMISE: Gas = Gas(10_000_000_000_000);
 const GAS_FOR_SELL_PROMISE: Gas = Gas(15_000_000_000_000);
 const GAS_FOR_RETURN_VALUE_PROMISE: Gas = Gas(5_000_000_000_000);
 // Commission on USN account on 11.04.22
-const USN_COMMISSION: Balance = 98_942_062_800_000_000;
-const NEAR_COMMISSION: Balance = 10_498_000_000_000_000_000_000;
+const INITIAL_USN_COMMISSION: Balance = 98_942_062_800_000_000;
+const INITIAL_NEAR_COMMISSION: Balance = 10_498_000_000_000_000_000_000;
 
 const MAX_SPREAD: Balance = 50_000; // 0.05 = 5%
 const SPREAD_DECIMAL: u8 = 6;
@@ -622,8 +622,35 @@ impl Contract {
     #[init(ignore_state)]
     #[private]
     pub fn migrate() -> Self {
-        let contract: Contract = env::state_read().expect("Contract is not initialized");
-        contract
+        #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+        struct ContractV017 {
+            owner_id: AccountId,
+            guardians: UnorderedSet<AccountId>,
+            token: FungibleTokenFreeStorage, // backward compatible
+            metadata: LazyOption<FungibleTokenMetadata>,
+            black_list: LookupMap<AccountId, BlackListStatus>,
+            status: ContractStatus,
+            oracle: Oracle,
+            spread: Spread,
+        }
+
+        let old: ContractV017 = env::state_read().expect("Contract is not initialized");
+
+        Self {
+            owner_id: old.owner_id,
+            guardians: old.guardians,
+            token: old.token,
+            metadata: old.metadata,
+            black_list: old.black_list,
+            status: old.status,
+            spread: old.spread,
+            oracle: old.oracle,
+            // This is a change: add commission field with initial value
+            commission: Commission {
+                usn: INITIAL_USN_COMMISSION,
+                near: INITIAL_NEAR_COMMISSION,
+            },
+        }
     }
 
     fn abort_if_pause(&self) {
