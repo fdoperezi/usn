@@ -58,12 +58,12 @@ describe('Anyone', function () {
   });
   it('should get a usn commission', async () => {
     const commission_usn = await global.aliceContract.commission_usn();
-    assert.equal(commission_usn, '98942062800000000');
+    assert.equal(commission_usn, '0');
   });
 
   it('should get a near commission', async () => {
     const commission_near = await global.aliceContract.commission_near();
-    assert.equal(commission_near, '10498000000000000000000');
+    assert.equal(commission_near, '0');
   });
 });
 
