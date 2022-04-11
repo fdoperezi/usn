@@ -32,8 +32,7 @@ const usnMethods = {
     'owner',
     'ft_balance_of',
     'storage_balance_of',
-    'commission_usn',
-    'commission_near',
+    'commission',
   ],
   changeMethods: [
     'new',

@@ -607,12 +607,8 @@ impl Contract {
         format!("{}:{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
     }
 
-    pub fn commission_usn(&self) -> U128 {
-        U128(self.commission.usn)
-    }
-
-    pub fn commission_near(&self) -> U128 {
-        U128(self.commission.near)
+    pub fn commission(&self) -> Commission {
+        self.commission.clone()
     }
 
     /// This is NOOP implementation. KEEP IT if you haven't changed contract state.
@@ -1210,12 +1206,9 @@ mod tests {
             Some(expected_rate.clone()),
             fresh_rate.clone(),
         );
-        assert_eq!(contract.commission_usn(), U128(55_719_500_000_000_000));
+        assert_eq!(contract.commission().usn, 55_719_500_000_000_000);
 
-        assert_eq!(
-            contract.commission_near(),
-            U128(5_000_000_000_000_000_000_000)
-        );
+        assert_eq!(contract.commission().near, 5_000_000_000_000_000_000_000);
 
         contract.finish_sell(
             accounts(2),
@@ -1223,12 +1216,9 @@ mod tests {
             Some(expected_rate.clone()),
             fresh_rate,
         );
-        assert_eq!(contract.commission_usn(), U128(55_724_500_000_000_000));
+        assert_eq!(contract.commission().usn, 55_724_500_000_000_000);
 
-        assert_eq!(
-            contract.commission_near(),
-            U128(5_000_448_675_957_250_154_793)
-        );
+        assert_eq!(contract.commission().near, 5_000_448_675_957_250_154_793);
     }
 
     #[test]
