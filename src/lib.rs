@@ -405,8 +405,7 @@ impl Contract {
         self.commission.usn += commission_usn.as_u128();
         self.commission.near += commission_near.as_u128();
 
-        let spread_multiplier = spread_denominator - self.spread_u128(amount); // 1 - 0.005
-        let amount = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator; // amount * 0.995
+        let amount = U256::from(amount) - commission_usn; // amount * 0.995
 
         // The final amount is going to be less than u128 after removing commission.
         let amount = amount.as_u128();
@@ -474,8 +473,7 @@ impl Contract {
         self.commission.usn += commission_usn.as_u128();
         self.commission.near += commission_near.as_u128();
 
-        let spread_multiplier = spread_denominator - self.spread_u128(amount);
-        let sell = U256::from(amount) * U256::from(spread_multiplier) / spread_denominator;
+        let sell = U256::from(amount) - commission_usn;
         // Make exchange: USN -> NEAR.
         let deposit = sell * U256::from(10u128.pow(u32::from(rate.decimals() - TOKEN_DECIMAL)))
             / rate.multiplier();
